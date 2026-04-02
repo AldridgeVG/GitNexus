@@ -15,3 +15,15 @@ package-lock.json
 # IDE
 .vscode/
 .idea/
+
+# 不忽略 vendor 目录（默认会忽略）
+!vendor/
+!vendor/**/*
+
+# 但忽略 vendor 中的开发文件
+vendor/**/test/
+vendor/**/.github/
+vendor/**/examples/
+vendor/**/.doc/
+vendor/**/.git/
+vendor/**/node_modules/
