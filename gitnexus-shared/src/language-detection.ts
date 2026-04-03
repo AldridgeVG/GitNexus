@@ -38,9 +38,10 @@ const EXTENSION_MAP: Record<SupportedLanguages, readonly string[]> = {
   [SupportedLanguages.Ruby]: ['.rb', '.rake', '.gemspec'],
   [SupportedLanguages.Rust]: ['.rs'],
   [SupportedLanguages.PHP]: ['.php', '.phtml', '.php3', '.php4', '.php5', '.php8'],
-  [SupportedLanguages.Kotlin]: ['.kt', '.kts'],
   [SupportedLanguages.Swift]: ['.swift'],
   [SupportedLanguages.Dart]: ['.dart'],
+  [SupportedLanguages.Kotlin]: ['.kt', '.kts'],
+  [SupportedLanguages.Pascal]: ['.pas', '.pp', '.dpr', '.lpr', '.dpk', '.inc'],
   [SupportedLanguages.Cobol]: ['.cbl', '.cob', '.cpy', '.cobol'],
 } satisfies Record<SupportedLanguages, readonly string[]>; // Ensure exhaustiveness
 
@@ -95,9 +96,10 @@ const SYNTAX_MAP: Record<SupportedLanguages, string> = {
   [SupportedLanguages.Ruby]: 'ruby',
   [SupportedLanguages.Rust]: 'rust',
   [SupportedLanguages.PHP]: 'php',
-  [SupportedLanguages.Kotlin]: 'kotlin',
   [SupportedLanguages.Swift]: 'swift',
   [SupportedLanguages.Dart]: 'dart',
+  [SupportedLanguages.Kotlin]: 'kotlin',
+  [SupportedLanguages.Pascal]: 'pascal',
   [SupportedLanguages.Cobol]: 'cobol',
 } satisfies Record<SupportedLanguages, string>; // Ensure exhaustiveness
 

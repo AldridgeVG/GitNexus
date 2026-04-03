@@ -16,9 +16,10 @@ export enum SupportedLanguages {
   Ruby = 'ruby',
   Rust = 'rust',
   PHP = 'php',
-  Kotlin = 'kotlin',
   Swift = 'swift',
   Dart = 'dart',
+  Kotlin = 'kotlin',
+  Pascal = 'pascal',
   /** Standalone regex processor — no tree-sitter, no LanguageProvider. */
   Cobol = 'cobol',
 }

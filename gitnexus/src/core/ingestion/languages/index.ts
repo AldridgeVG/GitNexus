@@ -24,6 +24,7 @@ import { rubyProvider } from './ruby.js';
 import { swiftProvider } from './swift.js';
 import { dartProvider } from './dart.js';
 import { cobolProvider } from './cobol.js';
+import { pascalProvider } from './pascal.js';
 
 export const providers = {
   [SupportedLanguages.JavaScript]: javascriptProvider,
@@ -40,6 +41,7 @@ export const providers = {
   [SupportedLanguages.Ruby]: rubyProvider,
   [SupportedLanguages.Swift]: swiftProvider,
   [SupportedLanguages.Dart]: dartProvider,
+  [SupportedLanguages.Pascal]: pascalProvider,
   [SupportedLanguages.Cobol]: cobolProvider,
 } satisfies Record<SupportedLanguages, LanguageProvider>;
 

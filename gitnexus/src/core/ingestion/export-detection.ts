@@ -243,3 +243,14 @@ export const rubyExportChecker: ExportChecker = (_node, _name) => true;
 
 /** Dart: public if no leading underscore (convention, same as Python). */
 export const dartExportChecker: ExportChecker = (_node, name) => !name.startsWith('_');
+
+/** Pascal/Delphi: symbols in interface section are exported, implementation section are not. */
+export const pascalExportChecker: ExportChecker = (node, _name) => {
+  let current: SyntaxNode | null = node;
+  while (current) {
+    if (current.type === 'interface_section') return true;
+    if (current.type === 'implementation_section') return false;
+    current = current.parent;
+  }
+  return false;
+};

@@ -1146,6 +1146,15 @@ export const DART_QUERIES = `
       (type_identifier) @heritage.trait))) @heritage
 `;
 
+// Pascal/Delphi queries - works with tree-sitter-pascal
+// Note: Using node types from actual tree-sitter-pascal grammar
+export const PASCAL_QUERIES = `
+; Procedures and functions (both are defProc in this grammar)
+(defProc
+  header: (declProc
+    name: (identifier) @name)) @definition.function
+`;
+
 import { SupportedLanguages } from 'gitnexus-shared';
 
 export const LANGUAGE_QUERIES: Record<SupportedLanguages, string> = {
@@ -1163,5 +1172,6 @@ export const LANGUAGE_QUERIES: Record<SupportedLanguages, string> = {
   [SupportedLanguages.Ruby]: RUBY_QUERIES,
   [SupportedLanguages.Swift]: SWIFT_QUERIES,
   [SupportedLanguages.Dart]: DART_QUERIES,
+  [SupportedLanguages.Pascal]: PASCAL_QUERIES,
   [SupportedLanguages.Cobol]: '', // Standalone regex processor — no tree-sitter queries
 };

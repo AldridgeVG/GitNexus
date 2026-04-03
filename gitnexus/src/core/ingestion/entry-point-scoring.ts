@@ -226,6 +226,33 @@ export const ENTRY_POINT_PATTERNS = {
     /^onEvent$/, // BLoC event handler
     /^mapEventToState$/, // Legacy BLoC pattern
   ],
+
+  // Pascal
+  [SupportedLanguages.Pascal]: [
+    /^main$/i, // Free Pascal 标准程序入口
+    /^begin$/i, // Pascal 主程序 begin 块
+    /^program$/i, // Pascal program 声明
+    /^library$/i, // DLL 库入口
+    /^run$/i, // 通用启动函数
+    /^start$/i, // 启动方法
+    /^execute$/i, // 执行入口
+    /^initialize$/i, // 初始化单元
+    /^finalize$/i, // 析构/清理
+    /^create$/i, // TObject.Create 构造
+    /^destroy$/i, // TObject.Destroy 析构
+    /^formcreate$/i, // Delphi/Lazarus 窗口创建
+    /^formshow$/i, // 窗口显示
+    /^formactivate$/i, // 窗口激活
+    /^buttonclick$/i, // 按钮点击事件（典型入口）
+    /^onclick$/i, // 点击事件
+    /^oncreate$/i, // 组件创建事件
+    /^onshow$/i, // 显示事件
+    /^apartment$/i, // COM / ActiveForm 入口
+    /^dllmain$/i, // DLL 入口点
+    /^dllentry$/i,
+    /^export$/i,
+  ],
+
   [SupportedLanguages.Cobol]: [], // Standalone regex processor — no tree-sitter entry points
 } satisfies Record<SupportedLanguages, RegExp[]>;
 

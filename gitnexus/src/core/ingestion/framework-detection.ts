@@ -650,6 +650,40 @@ export const FRAMEWORK_AST_PATTERNS = {
     'ConsumerWidget',
   ],
   riverpod: ['@riverpod', 'ref.watch', 'ref.read', 'AsyncNotifier', 'Notifier'],
+
+  // Delphi/Pascal
+  delphi: [
+    'TForm',
+    'TFrame',
+    'FormCreate',
+    'FormShow',
+    'FormActivate',
+    'FormClose',
+    'FormDestroy',
+    'OnClick',
+    'OnChange',
+    'OnKeyPress',
+    'OnMouseUp',
+    'ButtonClick',
+    'MenuItemClick',
+    'Initialize',
+    'Finalize',
+    'Create',
+    'Destroy',
+  ],
+  fpc: [
+    'program',
+    'library',
+    'begin',
+    'end.',
+    'DllMain',
+    'DLLRegisterServer',
+    'DLLUnregisterServer',
+    'main',
+    'run',
+    'start',
+    'execute',
+  ],
 };
 
 interface AstFrameworkPatternConfig {
@@ -889,6 +923,20 @@ export const AST_FRAMEWORK_PATTERNS_BY_LANGUAGE = {
       entryPointMultiplier: 2.8,
       reason: 'riverpod-pattern',
       patterns: FRAMEWORK_AST_PATTERNS.riverpod,
+    },
+  ],
+  [SupportedLanguages.Pascal]: [
+    {
+      framework: 'delphi',
+      entryPointMultiplier: 3.2,
+      reason: 'delphi-form-event',
+      patterns: FRAMEWORK_AST_PATTERNS.delphi,
+    },
+    {
+      framework: 'fpc',
+      entryPointMultiplier: 3.0,
+      reason: 'fpc-main-program',
+      patterns: FRAMEWORK_AST_PATTERNS.fpc,
     },
   ],
   [SupportedLanguages.Cobol]: [], // Standalone regex processor — no AST framework patterns
