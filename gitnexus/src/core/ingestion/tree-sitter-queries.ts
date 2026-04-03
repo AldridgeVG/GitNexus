@@ -1153,6 +1153,10 @@ export const PASCAL_QUERIES = `
 (defProc
   header: (declProc
     name: (identifier) @name)) @definition.function
+
+; Function/procedure calls
+(exprCall
+  (identifier) @call.name) @call
 `;
 
 import { SupportedLanguages } from 'gitnexus-shared';
