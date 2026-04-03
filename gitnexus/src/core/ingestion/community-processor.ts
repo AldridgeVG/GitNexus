@@ -12,7 +12,6 @@
 // (src/communities-leiden) because it was never published to npm.
 // We use createRequire to load the CommonJS vendored files in ESM context.
 import Graph from 'graphology';
-import type { AbstractGraph, Attributes } from 'graphology-types';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
@@ -24,8 +23,9 @@ const __dirname = dirname(__filename);
 // Navigate to package root (works from both src/ and dist/)
 const leidenPath = resolve(__dirname, '..', '..', '..', 'vendor', 'leiden', 'index.cjs');
 const _require = createRequire(import.meta.url);
-/** Graphology Graph instance type (AbstractGraph from graphology-types avoids CJS/ESM interop namespace issue) */
-type GraphInstance = AbstractGraph<Attributes, Attributes, Attributes>;
+/** Graphology Graph instance type (using any to avoid graphology-types dependency issues) */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type GraphInstance = any;
 
 const leiden: LeidenModule = _require(leidenPath);
 
