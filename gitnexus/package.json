@@ -35,7 +35,12 @@
     "hooks",
     "scripts",
     "skills",
-    "vendor"
+    "vendor/tree-sitter-pascal/bindings",
+    "vendor/tree-sitter-pascal/src",
+    "vendor/tree-sitter-pascal/build/Release/*.node",
+    "vendor/tree-sitter-pascal/grammar.js",
+    "vendor/tree-sitter-pascal/tree-sitter.json",
+    "vendor/tree-sitter-pascal/package.json"
   ],
   "scripts": {
     "build": "npm run build:vendors && node scripts/build.js",

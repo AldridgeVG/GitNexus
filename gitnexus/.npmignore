@@ -16,14 +16,26 @@ package-lock.json
 .vscode/
 .idea/
 
-# 不忽略 vendor 目录（默认会忽略）
-!vendor/
-!vendor/**/*
+# vendor 目录由 package.json files 字段控制包含
+# 这里只定义要排除的内容
 
-# 但忽略 vendor 中的开发文件
+# vendor 中的开发/测试文件
 vendor/**/test/
 vendor/**/.github/
 vendor/**/examples/
 vendor/**/.doc/
 vendor/**/.git/
 vendor/**/node_modules/
+
+# vendor 中的构建中间文件（只保留 .node 二进制）
+vendor/**/build/node_modules/
+vendor/**/build/*.gypi
+vendor/**/build/*.sln
+vendor/**/build/*.vcxproj
+vendor/**/build/*.vcxproj.filters
+vendor/**/build/Release/*.exp
+vendor/**/build/Release/*.iobj
+vendor/**/build/Release/*.ipdb
+vendor/**/build/Release/*.lib
+vendor/**/build/Release/*.pdb
+vendor/**/build/Release/obj/
