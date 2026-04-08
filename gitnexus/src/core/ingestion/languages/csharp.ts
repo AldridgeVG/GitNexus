@@ -7,6 +7,7 @@
  */
 
 import { SupportedLanguages } from 'gitnexus-shared';
+import { createClassExtractor } from '../class-extractors/generic.js';
 import { defineLanguage } from '../language-provider.js';
 import { typeConfig as csharpConfig } from '../type-extractors/csharp.js';
 import { csharpExportChecker } from '../export-detection.js';
@@ -15,6 +16,8 @@ import { extractCSharpNamedBindings } from '../named-bindings/csharp.js';
 import { CSHARP_QUERIES } from '../tree-sitter-queries.js';
 import { createFieldExtractor } from '../field-extractors/generic.js';
 import { csharpConfig as csharpFieldConfig } from '../field-extractors/configs/csharp.js';
+import { createMethodExtractor } from '../method-extractors/generic.js';
+import { csharpMethodConfig } from '../method-extractors/configs/csharp.js';
 
 const BUILT_INS: ReadonlySet<string> = new Set([
   'Console',
@@ -122,5 +125,25 @@ export const csharpProvider = defineLanguage({
   interfaceNamePattern: /^I[A-Z]/,
   mroStrategy: 'implements-split',
   fieldExtractor: createFieldExtractor(csharpFieldConfig),
+  methodExtractor: createMethodExtractor(csharpMethodConfig),
+  classExtractor: createClassExtractor({
+    language: SupportedLanguages.CSharp,
+    typeDeclarationNodes: [
+      'class_declaration',
+      'interface_declaration',
+      'struct_declaration',
+      'enum_declaration',
+      'record_declaration',
+    ],
+    fileScopeNodeTypes: ['file_scoped_namespace_declaration'],
+    ancestorScopeNodeTypes: [
+      'namespace_declaration',
+      'class_declaration',
+      'interface_declaration',
+      'struct_declaration',
+      'enum_declaration',
+      'record_declaration',
+    ],
+  }),
   builtInNames: BUILT_INS,
 });

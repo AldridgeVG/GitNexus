@@ -42,6 +42,7 @@ const EXTENSION_MAP: Record<SupportedLanguages, readonly string[]> = {
   [SupportedLanguages.Dart]: ['.dart'],
   [SupportedLanguages.Kotlin]: ['.kt', '.kts'],
   [SupportedLanguages.Pascal]: ['.pas', '.pp', '.dpr', '.lpr', '.dpk', '.inc'],
+  [SupportedLanguages.Vue]: ['.vue'],
   [SupportedLanguages.Cobol]: ['.cbl', '.cob', '.cpy', '.cobol'],
 } satisfies Record<SupportedLanguages, readonly string[]>; // Ensure exhaustiveness
 
@@ -100,6 +101,7 @@ const SYNTAX_MAP: Record<SupportedLanguages, string> = {
   [SupportedLanguages.Dart]: 'dart',
   [SupportedLanguages.Kotlin]: 'kotlin',
   [SupportedLanguages.Pascal]: 'pascal',
+  [SupportedLanguages.Vue]: 'typescript',
   [SupportedLanguages.Cobol]: 'cobol',
 } satisfies Record<SupportedLanguages, string>; // Ensure exhaustiveness
 

@@ -16,8 +16,8 @@ import type {
   MethodInfo,
 } from '../method-types.js';
 
-/** Owner node types where member functions are effectively static (JVM semantics). */
-const STATIC_OWNER_TYPES = new Set(['companion_object', 'object_declaration']);
+/** Owner node types where member functions are effectively static (JVM/Ruby semantics). */
+const STATIC_OWNER_TYPES = new Set(['companion_object', 'object_declaration', 'singleton_class']);
 
 /**
  * Create a MethodExtractor from a declarative config.
@@ -37,17 +37,27 @@ export function createMethodExtractor(config: MethodExtractionConfig): MethodExt
     extract(node: SyntaxNode, context: MethodExtractorContext): ExtractedMethods | null {
       if (!typeDeclarationSet.has(node.type)) return null;
 
-      // Resolve owner name: field-based → type_identifier → simple_identifier → "Companion"
+      // Resolve owner name: config hook → field-based → type_identifier → simple_identifier → "Companion"
       let ownerName: string | undefined;
-      const nameField = node.childForFieldName('name');
-      if (nameField) {
-        ownerName = nameField.text;
-      } else {
-        for (let i = 0; i < node.namedChildCount; i++) {
-          const child = node.namedChild(i);
-          if (child && (child.type === 'type_identifier' || child.type === 'simple_identifier')) {
-            ownerName = child.text;
-            break;
+      if (config.extractOwnerName) {
+        ownerName = config.extractOwnerName(node);
+      }
+      if (!ownerName) {
+        const nameField = node.childForFieldName('name');
+        if (nameField) {
+          ownerName = nameField.text;
+        } else {
+          for (let i = 0; i < node.namedChildCount; i++) {
+            const child = node.namedChild(i);
+            if (
+              child &&
+              (child.type === 'type_identifier' ||
+                child.type === 'simple_identifier' ||
+                child.type === 'identifier')
+            ) {
+              ownerName = child.text;
+              break;
+            }
           }
         }
       }
@@ -63,8 +73,21 @@ export function createMethodExtractor(config: MethodExtractionConfig): MethodExt
         extractMethodsFromBody(body, node, context, config, methodNodeSet, methods);
       }
 
+      // Extract primary constructor from the owner node itself (e.g. C# 12)
+      if (config.extractPrimaryConstructor) {
+        const primaryCtor = config.extractPrimaryConstructor(node, context);
+        if (primaryCtor) methods.push(primaryCtor);
+      }
+
       return { ownerName, methods };
     },
+
+    extractFromNode(node: SyntaxNode, context: MethodExtractorContext): MethodInfo | null {
+      if (!methodNodeSet.has(node.type)) return null;
+      return buildMethod(node, node, context, config);
+    },
+
+    ...(config.extractFunctionName ? { extractFunctionName: config.extractFunctionName } : {}),
   };
 }
 
@@ -96,10 +119,17 @@ function findBodies(node: SyntaxNode, bodyNodeSet: Set<string>): SyntaxNode[] {
   return result;
 }
 
-function addNestedBodies(parent: SyntaxNode, bodyNodeSet: Set<string>, out: SyntaxNode[]): void {
+function addNestedBodies(
+  parent: SyntaxNode,
+  bodyNodeSet: Set<string>,
+  out: SyntaxNode[],
+  seen?: Set<SyntaxNode>,
+): void {
+  const visited = seen ?? new Set(out);
   for (let i = 0; i < parent.namedChildCount; i++) {
     const child = parent.namedChild(i);
-    if (child && bodyNodeSet.has(child.type) && !out.includes(child)) {
+    if (child && bodyNodeSet.has(child.type) && !visited.has(child)) {
+      visited.add(child);
       out.push(child);
     }
   }
@@ -114,8 +144,14 @@ function extractMethodsFromBody(
   out: MethodInfo[],
 ): void {
   for (let i = 0; i < body.namedChildCount; i++) {
-    const child = body.namedChild(i);
+    let child = body.namedChild(i);
     if (!child) continue;
+
+    // C++ template methods are wrapped in template_declaration — unwrap to the inner node
+    if (child.type === 'template_declaration') {
+      const inner = child.namedChildren.find((c) => methodNodeSet.has(c.type));
+      if (inner) child = inner;
+    }
 
     if (methodNodeSet.has(child.type)) {
       const method = buildMethod(child, ownerNode, context, config);
@@ -160,6 +196,11 @@ function buildMethod(
     isStatic,
     isAbstract,
     isFinal,
+    ...(config.isVirtual?.(node) ? { isVirtual: true } : {}),
+    ...(config.isOverride?.(node) ? { isOverride: true } : {}),
+    ...(config.isAsync?.(node) ? { isAsync: true } : {}),
+    ...(config.isPartial?.(node) ? { isPartial: true } : {}),
+    ...(config.isConst?.(node) ? { isConst: true } : {}),
     annotations: config.extractAnnotations?.(node) ?? [],
     sourceFile: context.filePath,
     line: node.startPosition.row + 1,
