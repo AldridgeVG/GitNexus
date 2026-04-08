@@ -1,5 +1,8 @@
 {
   "permissions": {
-    "allow": ["mcp__plugin_claude-mem_mcp-search__get_observations"]
+    "allow": [
+      "mcp__plugin_claude-mem_mcp-search__get_observations",
+      "Bash(ls -la node_modules/tree-sitter-pascal/build/Release/*.node)"
+    ]
   }
 }
