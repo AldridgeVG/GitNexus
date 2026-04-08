@@ -19,13 +19,39 @@ const SHARED_ROOT = path.resolve(ROOT, '..', 'gitnexus-shared');
 const DIST = path.join(ROOT, 'dist');
 const SHARED_DEST = path.join(DIST, '_shared');
 
+// 检测是否在全局安装模式下（prepare 钩子运行，但依赖未安装）
+function findTsc(cwd) {
+  // 优先使用本地 node_modules 的 tsc
+  const localTsc = path.join(cwd, 'node_modules', '.bin', 'tsc');
+  if (fs.existsSync(localTsc)) return localTsc;
+
+  // Windows 下的 .cmd 变体
+  const localTscCmd = path.join(cwd, 'node_modules', '.bin', 'tsc.cmd');
+  if (fs.existsSync(localTscCmd)) return localTscCmd;
+
+  // 回退到 npx（全局安装时可能没有本地 typescript）
+  return 'npx tsc';
+}
+
+// 如果 dist 已存在且不是开发模式，跳过构建（全局安装时使用预构建产物）
+const isGlobalInstall =
+  process.env.npm_config_global === 'true' || process.env.npm_config_global === '';
+const hasDist = fs.existsSync(DIST) && fs.existsSync(path.join(DIST, 'cli', 'index.js'));
+
+if (isGlobalInstall && hasDist) {
+  console.log('[build] global install with existing dist, skipping build');
+  process.exit(0);
+}
+
 // ── 1. Build gitnexus-shared ───────────────────────────────────────
 console.log('[build] compiling gitnexus-shared…');
-execSync('npx tsc', { cwd: SHARED_ROOT, stdio: 'inherit' });
+const sharedTsc = findTsc(SHARED_ROOT);
+execSync(sharedTsc, { cwd: SHARED_ROOT, stdio: 'inherit' });
 
 // ── 2. Build gitnexus ──────────────────────────────────────────────
 console.log('[build] compiling gitnexus…');
-execSync('npx tsc', { cwd: ROOT, stdio: 'inherit' });
+const rootTsc = findTsc(ROOT);
+execSync(rootTsc, { cwd: ROOT, stdio: 'inherit' });
 
 // ── 3. Copy shared dist ────────────────────────────────────────────
 console.log('[build] copying shared module into dist/_shared…');

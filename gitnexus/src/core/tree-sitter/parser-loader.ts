@@ -24,7 +24,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let Pascal: any = null;
 try {
   Pascal = _require('@fsdev/tree-sitter-pascal');
-} catch {}
+} catch (e: any) {
+  // 调试：打印加载错误（仅在 DEBUG 环境变量时输出）
+  if (process.env.DEBUG) {
+    console.error('[gitnexus-debug] Failed to load @fsdev/tree-sitter-pascal:', e.message);
+    console.error('[gitnexus-debug] import.meta.url:', import.meta.url);
+    console.error('[gitnexus-debug] __dirname:', __dirname);
+  }
+}
 
 // ===== 加载可选 Swift 解析器 =====//
 let Swift: any = null;

@@ -45,7 +45,12 @@ try {
 let Pascal: TreeSitterLanguage | null = null;
 try {
   Pascal = _require('@fsdev/tree-sitter-pascal');
-} catch {}
+} catch (e: any) {
+  // 调试：打印加载错误（仅在 DEBUG 环境变量时输出）
+  if (process.env.DEBUG) {
+    console.error('[gitnexus-debug] Failed to load @fsdev/tree-sitter-pascal:', e.message);
+  }
+}
 
 import { getLanguageFromFilename } from 'gitnexus-shared';
 import {
