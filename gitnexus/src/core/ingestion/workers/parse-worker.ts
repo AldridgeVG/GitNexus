@@ -41,34 +41,11 @@ try {
   Kotlin = _require('tree-sitter-kotlin');
 } catch {}
 
-// ===== Load Pascal parser (from vendor or npm) =====
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// ===== Load Pascal parser =====
 let Pascal: TreeSitterLanguage | null = null;
-function loadPascalParser(): TreeSitterLanguage | null {
-  const possiblePaths = [
-    'tree-sitter-pascal',
-    path.resolve(__dirname, '../../../../vendor/tree-sitter-pascal'),
-    path.resolve(__dirname, '../../../vendor/tree-sitter-pascal'),
-    path.resolve(process.cwd(), 'vendor/tree-sitter-pascal'),
-  ];
-  for (const tryPath of possiblePaths) {
-    try {
-      const parser = _require(tryPath);
-      // Verify ABI compatibility
-      const Parser = _require('tree-sitter');
-      const testParser = new Parser();
-      testParser.setLanguage(parser);
-      return parser;
-    } catch {
-      continue;
-    }
-  }
-  return null;
-}
-Pascal = loadPascalParser();
+try {
+  Pascal = _require('@fsdev/tree-sitter-pascal');
+} catch {}
 
 import { getLanguageFromFilename } from 'gitnexus-shared';
 import {
