@@ -89,6 +89,8 @@ export const FUNCTION_NODE_TYPES = new Set([
   // Dart
   'function_signature',
   'method_signature',
+  // Pascal/Delphi
+  'defProc', // procedure/function definitions
 ]);
 
 /**
@@ -317,6 +319,20 @@ export const extractFunctionName = (
       funcName: node.type === 'init_declaration' ? 'init' : 'deinit',
       label: 'Constructor',
     };
+  }
+
+  // Pascal/Delphi: defProc -> declProc -> identifier
+  if (node.type === 'defProc') {
+    const declProc =
+      node.childForFieldName?.('header') ?? node.namedChildren.find((c) => c?.type === 'declProc');
+    if (declProc) {
+      const ident =
+        declProc.childForFieldName?.('name') ??
+        declProc.namedChildren.find((c) => c?.type === 'identifier');
+      if (ident?.text) {
+        return { funcName: ident.text, label: 'Function' };
+      }
+    }
   }
 
   if (FUNCTION_DECLARATION_TYPES.has(node.type)) {
