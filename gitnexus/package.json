@@ -65,7 +65,7 @@
     "mnemonist": "^0.39.0",
     "onnxruntime-node": "^1.24.0",
     "pandemonium": "^2.4.0",
-    "tree-sitter": "^0.22.0",
+    "tree-sitter": "0.25.0",
     "tree-sitter-c": "0.23.2",
     "tree-sitter-c-sharp": "^0.23.1",
     "tree-sitter-cpp": "^0.23.4",
@@ -101,7 +101,8 @@
   "overrides": {
     "@huggingface/transformers": {
       "onnxruntime-node": "$onnxruntime-node"
-    }
+    },
+    "node-addon-api": "^8.3.0"
   },
   "engines": {
     "node": ">=20.0.0"
