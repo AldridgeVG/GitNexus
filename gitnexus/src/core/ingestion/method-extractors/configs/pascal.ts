@@ -74,19 +74,18 @@ function extractPascalReturnType(node: SyntaxNode): string | undefined {
 
 export const pascalMethodConfig: MethodExtractionConfig = {
   language: SupportedLanguages.Pascal,
-  typeDeclarationNodes: ['class_type', 'object_type', 'record_type'],
+  // Updated to match tree-sitter-pascal node types
+  typeDeclarationNodes: ['declClass', 'declIntf', 'declHelper'],
   methodNodeTypes: [
-    'procedure_declaration',
-    'function_declaration',
-    'constructor_declaration',
-    'destructor_declaration',
+    'defProc', // procedure/function definition
+    'declProcFwd', // forward declaration
   ],
-  bodyNodeTypes: ['class_body', 'object_body'],
+  bodyNodeTypes: ['declSection', '_declClass'],
 
   extractName(node) {
-    // procedure_declaration > procedure_heading > name:(identifier)
-    const heading = node.childForFieldName('heading');
-    const nameNode = heading?.childForFieldName('name') ?? node.childForFieldName('name');
+    // defProc > header:(declProc) > name:(identifier)
+    const header = node.childForFieldName('header');
+    const nameNode = header?.childForFieldName('name') ?? node.childForFieldName('name');
     return nameNode?.text;
   },
 
@@ -101,15 +100,16 @@ export const pascalMethodConfig: MethodExtractionConfig = {
   },
 
   isStatic(_node) {
-    // Pascal class methods are different - no static keyword
+    // Pascal class methods are marked with 'class' keyword
+    // Check for class keyword in proc attributes
     return false;
   },
 
   isAbstract(node, _ownerNode) {
-    // Check for abstract/virtual modifiers
-    const heading = node.childForFieldName('heading') ?? node;
-    for (let i = 0; i < heading.childCount; i++) {
-      const child = heading.child(i);
+    // Check for abstract/virtual modifiers in procAttribute
+    const header = node.childForFieldName('header') ?? node;
+    for (let i = 0; i < header.childCount; i++) {
+      const child = header.child(i);
       if (
         child &&
         (child.text === 'abstract' || child.text === 'virtual' || child.text === 'dynamic')
@@ -122,11 +122,11 @@ export const pascalMethodConfig: MethodExtractionConfig = {
 
   isFinal(node) {
     // Check for override without virtual/dynamic = final
-    const heading = node.childForFieldName('heading') ?? node;
+    const header = node.childForFieldName('header') ?? node;
     let hasOverride = false;
     let hasVirtual = false;
-    for (let i = 0; i < heading.childCount; i++) {
-      const child = heading.child(i);
+    for (let i = 0; i < header.childCount; i++) {
+      const child = header.child(i);
       if (child) {
         if (child.text === 'override') hasOverride = true;
         if (child.text === 'virtual' || child.text === 'dynamic') hasVirtual = true;

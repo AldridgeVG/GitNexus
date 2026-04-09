@@ -1176,13 +1176,58 @@ export const DART_QUERIES = `
 
 // Pascal/Delphi queries - works with tree-sitter-pascal
 // Note: Using node types from actual tree-sitter-pascal grammar
+// AST structure verified from concrete/ examples
 export const PASCAL_QUERIES = `
-; Procedures and functions (both are defProc in this grammar)
+; ===== Type Definitions =====
+
+; Classes - declType with declClass child
+(declType
+  name: (identifier) @name
+  (declClass)) @definition.class
+
+; Interfaces - declType with declIntf child
+(declType
+  name: (identifier) @name
+  (declIntf)) @definition.interface
+
+; Enums - declType with type(declEnum) structure
+(declType
+  name: (identifier) @name
+  (type
+    (declEnum))) @definition.enum
+
+; Type aliases (simple type definitions like TMyInt = Integer)
+(declType
+  name: (identifier) @name) @definition.type
+
+; ===== Member Definitions =====
+
+; Fields (in classes, records, etc.)
+(declField
+  (identifier) @name) @definition.property
+
+; Properties
+(declProp
+  (identifier) @name) @definition.property
+
+; Procedures and functions
 (defProc
   header: (declProc
-    name: (identifier) @name)) @definition.function
+    (identifier) @name)) @definition.function
 
-; Function/procedure calls
+; Procedure declarations (forward declarations in interface section)
+(declProc
+  (identifier) @name) @definition.function
+
+; ===== Imports =====
+
+; Uses clause - declUses contains moduleName nodes
+(declUses
+  (moduleName (identifier) @import.source)) @import
+
+; ===== Function/Procedure Calls =====
+
+; Direct function/procedure calls
 (exprCall
   (identifier) @call.name) @call
 `;

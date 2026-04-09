@@ -31,26 +31,28 @@ function findPascalVisibility(node: SyntaxNode): FieldVisibility {
 
 export const pascalConfig: FieldExtractionConfig = {
   language: SupportedLanguages.Pascal,
-  typeDeclarationNodes: ['class_type', 'record_type', 'object_type'],
-  fieldNodeTypes: ['field_declaration', 'variable_declaration'],
-  bodyNodeTypes: ['class_body', 'record_field_list', 'object_body'],
+  // Updated to match tree-sitter-pascal node types
+  typeDeclarationNodes: ['declClass', 'declIntf', 'declHelper'],
+  fieldNodeTypes: ['declField', 'declVar', 'declConst'],
+  bodyNodeTypes: ['declSection', '_declClass'],
   defaultVisibility: 'public',
 
   extractName(node) {
-    // field_declaration > names:(identifier_list) > identifiers
+    // declField has direct name field
+    const nameNode = node.childForFieldName('name');
+    if (nameNode) return nameNode.text;
+
+    // Fallback: check for identifier_list (var declarations)
     const namesNode = node.childForFieldName('names');
     if (namesNode?.type === 'identifier_list') {
       const firstIdent = namesNode.namedChild(0);
       if (firstIdent?.type === 'identifier') return firstIdent.text;
     }
-    // Fallback: direct name field
-    const nameNode = node.childForFieldName('name');
-    if (nameNode) return nameNode.text;
     return undefined;
   },
 
   extractType(node) {
-    // field_declaration > type:(type_identifier)
+    // declField > type:(typeref)
     const typeNode = node.childForFieldName('type');
     if (typeNode) {
       return extractSimpleTypeName(typeNode) ?? typeNode.text?.trim();
@@ -63,12 +65,13 @@ export const pascalConfig: FieldExtractionConfig = {
   },
 
   isStatic(_node) {
-    // Pascal doesn't have static class fields in the same way
+    // Pascal class fields are marked with 'class var'
+    // Check for class keyword in parent context
     return false;
   },
 
   isReadonly(node) {
-    // const fields are readonly
-    return node.type === 'const_declaration' || node.type === 'const_section';
+    // const declarations are readonly
+    return node.type === 'declConst' || node.type === 'declConsts';
   },
 };
