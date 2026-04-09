@@ -33,19 +33,19 @@ try {
   }
 }
 
-// ===== 加载可选 Swift 解析器 =====//
+// ===== 加载可选 Swift 解析器 =====
 let Swift: any = null;
 try {
   Swift = _require('tree-sitter-swift');
 } catch {}
 
-// ===== 加载可选 Dart 解析器 =====//
+// ===== 加载可选 Dart 解析器 =====
 let Dart: any = null;
 try {
   Dart = _require('tree-sitter-dart');
 } catch {}
 
-// ===== 加载可选 Kotlin 解析器 =====//
+// ===== 加载可选 Kotlin 解析器 =====
 let Kotlin: any = null;
 try {
   Kotlin = _require('tree-sitter-kotlin');
