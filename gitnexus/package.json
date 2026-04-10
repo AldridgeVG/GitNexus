@@ -1,6 +1,6 @@
 {
   "name": "@fsdev/fsgitnexus",
-  "version": "2.0.8",
+  "version": "2.1.0",
   "description": "Graph-powered code intelligence for AI agents. Index any codebase, query via MCP or CLI.",
   "author": "Abhigyan Patwari",
   "license": "PolyForm-Noncommercial-1.0.0",
@@ -47,7 +47,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@fsdev/tree-sitter-pascal": "^2.0.5",
+    "@fsdev/tree-sitter-pascal": "^2.0.6",
     "@huggingface/transformers": "^3.0.0",
     "@ladybugdb/core": "^0.15.2",
     "@modelcontextprotocol/sdk": "^1.0.0",
