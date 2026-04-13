@@ -14,7 +14,7 @@ import v8 from 'v8';
 import cliProgress from 'cli-progress';
 import { closeLbug } from '../core/lbug/lbug-adapter.js';
 import { getStoragePaths, getGlobalRegistryPath } from '../storage/repo-manager.js';
-import { getGitRoot, hasGitDir } from '../storage/git.js';
+import { getVCSRoot, detectVCSType } from '../storage/vcs-factory.js';
 import { runFullAnalysis } from '../core/run-analyze.js';
 import fs from 'fs/promises';
 
@@ -47,8 +47,10 @@ export interface AnalyzeOptions {
   verbose?: boolean;
   /** Skip AGENTS.md and CLAUDE.md gitnexus block updates. */
   skipAgentsMd?: boolean;
-  /** Index the folder even when no .git directory is present. */
+  /** Index the folder even when no VCS directory is present. */
   skipGit?: boolean;
+  /** @deprecated Use skipVcs instead */
+  skipVcs?: boolean;
 }
 
 export const analyzeCommand = async (inputPath?: string, options?: AnalyzeOptions) => {
@@ -60,15 +62,17 @@ export const analyzeCommand = async (inputPath?: string, options?: AnalyzeOption
 
   console.log('\n  GitNexus Analyzer\n');
 
+  const skipVcs = options?.skipGit || options?.skipVcs;
+
   let repoPath: string;
   if (inputPath) {
     repoPath = path.resolve(inputPath);
   } else {
-    const gitRoot = getGitRoot(process.cwd());
-    if (!gitRoot) {
-      if (!options?.skipGit) {
+    const vcsRoot = getVCSRoot(process.cwd());
+    if (!vcsRoot) {
+      if (!skipVcs) {
         console.log(
-          '  Not inside a git repository.\n  Tip: pass --skip-git to index any folder without a .git directory.\n',
+          '  Not inside a version control repository.\n  Tip: pass --skip-git to index any folder without a VCS directory.\n',
         );
         process.exitCode = 1;
         return;
@@ -76,22 +80,27 @@ export const analyzeCommand = async (inputPath?: string, options?: AnalyzeOption
       // --skip-git: fall back to cwd as the root
       repoPath = path.resolve(process.cwd());
     } else {
-      repoPath = gitRoot;
+      repoPath = vcsRoot.root;
     }
   }
 
-  const repoHasGit = hasGitDir(repoPath);
-  if (!repoHasGit && !options?.skipGit) {
+  const vcsType = detectVCSType(repoPath);
+  const hasVcs = vcsType !== 'none';
+
+  if (!hasVcs && !skipVcs) {
     console.log(
-      '  Not a git repository.\n  Tip: pass --skip-git to index any folder without a .git directory.\n',
+      '  Not a version control repository.\n  Tip: pass --skip-git to index any folder without a VCS directory.\n',
     );
     process.exitCode = 1;
     return;
   }
-  if (!repoHasGit) {
+  if (!hasVcs) {
     console.log(
-      '  Warning: no .git directory found \u2014 commit-tracking and incremental updates disabled.\n',
+      '  Warning: no VCS directory found — revision-tracking and incremental updates disabled.\n',
     );
+  } else {
+    const vcsLabel = vcsType === 'git' ? 'Git' : vcsType === 'svn' ? 'SVN' : 'VCS';
+    console.log(`  Detected ${vcsLabel} repository.`);
   }
 
   // KuzuDB migration cleanup is handled by runFullAnalysis internally.
@@ -175,7 +184,7 @@ export const analyzeCommand = async (inputPath?: string, options?: AnalyzeOption
       {
         force: options?.force || options?.skills,
         embeddings: options?.embeddings,
-        skipGit: options?.skipGit,
+        skipGit: skipVcs,
         skipAgentsMd: options?.skipAgentsMd,
       },
       {

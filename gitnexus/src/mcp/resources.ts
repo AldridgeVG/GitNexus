@@ -174,7 +174,13 @@ async function getReposResource(backend: LocalBackend): Promise<string> {
     lines.push(`  - name: "${repo.name}"`);
     lines.push(`    path: "${repo.path}"`);
     lines.push(`    indexed: "${repo.indexedAt}"`);
-    lines.push(`    commit: "${repo.lastCommit?.slice(0, 7) || 'unknown'}"`);
+    const vcsType = repo.vcsType ?? 'git';
+    const lastRevision = repo.lastRevision ?? repo.lastCommit ?? 'unknown';
+    if (vcsType === 'svn') {
+      lines.push(`    revision: "r${lastRevision}"`);
+    } else {
+      lines.push(`    commit: "${lastRevision.slice(0, 7)}"`);
+    }
     if (repo.stats) {
       lines.push(`    files: ${repo.stats.files || 0}`);
       lines.push(`    symbols: ${repo.stats.nodes || 0}`);
@@ -206,9 +212,10 @@ async function getContextResource(backend: LocalBackend, repoName?: string): Pro
 
   // Check staleness
   const repoPath = repo.repoPath;
-  const lastCommit = repo.lastCommit || 'HEAD';
+  // Use lastRevision if available, otherwise fall back to lastCommit
+  const lastRevision = repo.lastRevision ?? repo.lastCommit ?? 'HEAD';
   const staleness = repoPath
-    ? checkStaleness(repoPath, lastCommit)
+    ? checkStaleness(repoPath, lastRevision)
     : { isStale: false, commitsBehind: 0 };
 
   const lines: string[] = [`project: ${context.projectName}`];

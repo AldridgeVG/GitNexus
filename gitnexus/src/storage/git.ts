@@ -3,7 +3,12 @@ import { statSync } from 'fs';
 import path from 'path';
 
 // Git utilities for repository detection, commit tracking, and diff analysis
+// These functions are kept for backward compatibility.
+// New code should use the VCS abstraction layer (vcs-factory.ts).
 
+/**
+ * @deprecated Use createVCSAdapter() from vcs-factory.ts for new code
+ */
 export const isGitRepo = (repoPath: string): boolean => {
   try {
     execSync('git rev-parse --is-inside-work-tree', { cwd: repoPath, stdio: 'ignore' });
@@ -13,6 +18,9 @@ export const isGitRepo = (repoPath: string): boolean => {
   }
 };
 
+/**
+ * @deprecated Use VCSAdapter.getCurrentRevision() for new code
+ */
 export const getCurrentCommit = (repoPath: string): string => {
   try {
     return execSync('git rev-parse HEAD', { cwd: repoPath }).toString().trim();
@@ -23,6 +31,7 @@ export const getCurrentCommit = (repoPath: string): string => {
 
 /**
  * Find the git repository root from any path inside the repo
+ * @deprecated Use getVCSRoot() from vcs-factory.ts for new code
  */
 export const getGitRoot = (fromPath: string): string | null => {
   try {
@@ -43,6 +52,7 @@ export const getGitRoot = (fromPath: string): string | null => {
  *
  * @param dirPath - Absolute path to the directory to inspect.
  * @returns `true` when `.git` is present, `false` otherwise.
+ * @deprecated Use hasVCSDir() from vcs-factory.ts for new code
  */
 export const hasGitDir = (dirPath: string): boolean => {
   try {
@@ -52,3 +62,15 @@ export const hasGitDir = (dirPath: string): boolean => {
     return false;
   }
 };
+
+// Re-export VCS types and factory for convenience
+export {
+  createVCSAdapter,
+  getVCSRoot,
+  hasVCSDir,
+  detectVCSType,
+  getIgnoreFiles,
+} from './vcs-factory.js';
+export type { VCSAdapter, VCSType, StalenessInfo } from './vcs.js';
+export { GitAdapter } from './vcs-git.js';
+export { SVNAdapter } from './vcs-svn.js';

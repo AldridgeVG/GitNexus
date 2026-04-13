@@ -367,6 +367,8 @@ export const createServer = async (port: number, host: string = '127.0.0.1') => 
           path: r.path,
           indexedAt: r.indexedAt,
           lastCommit: r.lastCommit,
+          vcsType: r.vcsType ?? 'git',
+          lastRevision: r.lastRevision ?? r.lastCommit,
           stats: r.stats,
         })),
       );

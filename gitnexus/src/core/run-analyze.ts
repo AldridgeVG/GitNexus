@@ -30,7 +30,7 @@ import {
   registerRepo,
   cleanupOldKuzuFiles,
 } from '../storage/repo-manager.js';
-import { getCurrentCommit, hasGitDir } from '../storage/git.js';
+import { createVCSAdapter, hasGitDir } from '../storage/vcs-factory.js';
 import { generateAIContextFiles } from '../cli/ai-context.js';
 
 // ---------------------------------------------------------------------------
@@ -117,14 +117,23 @@ export async function runFullAnalysis(
     log('Migrating from KuzuDB to LadybugDB — rebuilding index...');
   }
 
-  const repoHasGit = hasGitDir(repoPath);
-  const currentCommit = repoHasGit ? getCurrentCommit(repoPath) : '';
+  // Detect and create VCS adapter
+  const vcsAdapter = createVCSAdapter(repoPath);
+  const vcsType = vcsAdapter?.type ?? 'none';
+  const currentRevision = vcsAdapter?.getCurrentRevision() ?? '';
+  const currentCommit = vcsAdapter?.getCurrentCommit() ?? '';
+
   const existingMeta = await loadMeta(storagePath);
 
   // ── Early-return: already up to date ──────────────────────────────
-  if (existingMeta && !options.force && existingMeta.lastCommit === currentCommit) {
-    // Non-git folders have currentCommit = '' — always rebuild since we can't detect changes
-    if (currentCommit !== '') {
+  // Check using the effective revision (lastRevision for SVN, lastCommit for Git)
+  const lastEffectiveRevision = existingMeta
+    ? (existingMeta.lastRevision ?? existingMeta.lastCommit)
+    : '';
+
+  if (existingMeta && !options.force && lastEffectiveRevision === currentRevision) {
+    // Non-VCS folders have currentRevision = '' — always rebuild since we can't detect changes
+    if (currentRevision !== '') {
       return {
         repoName: path.basename(repoPath),
         repoPath,
@@ -282,6 +291,8 @@ export async function runFullAnalysis(
     const meta = {
       repoPath,
       lastCommit: currentCommit,
+      vcsType,
+      lastRevision: currentRevision,
       indexedAt: new Date().toISOString(),
       stats: {
         files: pipelineResult.totalFileCount,

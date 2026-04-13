@@ -4,21 +4,23 @@
  * Shows the indexing status of the current repository.
  */
 
-import { findRepo, getStoragePaths, hasKuzuIndex } from '../storage/repo-manager.js';
-import { getCurrentCommit, isGitRepo, getGitRoot } from '../storage/git.js';
+import { findRepo, getStoragePaths, hasKuzuIndex, getVCSType } from '../storage/repo-manager.js';
+import { createVCSAdapter, getVCSRoot } from '../storage/vcs-factory.js';
 
 export const statusCommand = async () => {
   const cwd = process.cwd();
 
-  if (!isGitRepo(cwd)) {
-    console.log('Not a git repository.');
+  const vcsAdapter = createVCSAdapter(cwd);
+  if (!vcsAdapter) {
+    console.log('Not a version control repository (Git or SVN).');
     return;
   }
 
   const repo = await findRepo(cwd);
   if (!repo) {
     // Check if there's a stale KuzuDB index that needs migration
-    const repoRoot = getGitRoot(cwd) ?? cwd;
+    const vcsRoot = getVCSRoot(cwd);
+    const repoRoot = vcsRoot?.root ?? cwd;
     const { storagePath } = getStoragePaths(repoRoot);
     if (await hasKuzuIndex(storagePath)) {
       console.log('Repository has a stale KuzuDB index from a previous version.');
@@ -30,12 +32,25 @@ export const statusCommand = async () => {
     return;
   }
 
-  const currentCommit = getCurrentCommit(repo.repoPath);
-  const isUpToDate = currentCommit === repo.meta.lastCommit;
+  const currentRevision = vcsAdapter.getCurrentRevision();
+  const vcsType = getVCSType(repo.meta);
+
+  // Use lastRevision if available, otherwise fall back to lastCommit
+  const lastRevision = repo.meta.lastRevision ?? repo.meta.lastCommit;
+
+  const isUpToDate = currentRevision === lastRevision;
 
   console.log(`Repository: ${repo.repoPath}`);
+  console.log(`VCS Type: ${vcsType}`);
   console.log(`Indexed: ${new Date(repo.meta.indexedAt).toLocaleString()}`);
-  console.log(`Indexed commit: ${repo.meta.lastCommit?.slice(0, 7)}`);
-  console.log(`Current commit: ${currentCommit?.slice(0, 7)}`);
+
+  if (vcsType === 'svn') {
+    console.log(`Indexed revision: r${lastRevision}`);
+    console.log(`Current revision: r${currentRevision}`);
+  } else {
+    console.log(`Indexed commit: ${lastRevision?.slice(0, 7)}`);
+    console.log(`Current commit: ${currentRevision?.slice(0, 7)}`);
+  }
+
   console.log(`Status: ${isUpToDate ? '✅ up-to-date' : '⚠️ stale (re-run gitnexus analyze)'}`);
 };

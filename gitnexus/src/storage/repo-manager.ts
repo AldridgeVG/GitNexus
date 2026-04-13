@@ -10,9 +10,30 @@ import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
 
+/**
+ * VCS types supported by GitNexus
+ */
+export type VCSType = 'git' | 'svn' | 'none';
+
 export interface RepoMeta {
   repoPath: string;
+  /**
+   * Last commit hash (Git) or revision number (SVN)
+   * @deprecated Kept for backward compatibility. Use lastRevision for new code.
+   */
   lastCommit: string;
+  /**
+   * VCS type for this repository
+   * @default 'git' for backward compatibility
+   */
+  vcsType?: VCSType;
+  /**
+   * VCS-specific revision identifier:
+   * - Git: same as lastCommit (full commit hash)
+   * - SVN: revision number (e.g., "1234")
+   * - None: empty string
+   */
+  lastRevision?: string;
   indexedAt: string;
   stats?: {
     files?: number;
@@ -40,7 +61,10 @@ export interface RegistryEntry {
   path: string;
   storagePath: string;
   indexedAt: string;
+  /** @deprecated Use lastRevision for new code */
   lastCommit: string;
+  vcsType?: VCSType;
+  lastRevision?: string;
   stats?: RepoMeta['stats'];
 }
 
@@ -206,6 +230,45 @@ export const addToGitignore = async (repoPath: string): Promise<void> => {
   }
 };
 
+// ─── Migration Helpers ────────────────────────────────────────────────
+
+/**
+ * Migrate old RepoMeta to new format with vcsType and lastRevision.
+ * This ensures backward compatibility with existing .gitnexus directories.
+ */
+export function migrateRepoMeta(meta: Partial<RepoMeta> & { lastCommit: string }): RepoMeta {
+  // If vcsType is missing, assume Git (backward compatibility)
+  const vcsType = meta.vcsType ?? 'git';
+
+  // If lastRevision is missing, use lastCommit (backward compatibility)
+  const lastRevision = meta.lastRevision ?? meta.lastCommit;
+
+  return {
+    repoPath: meta.repoPath!,
+    lastCommit: meta.lastCommit,
+    vcsType,
+    lastRevision,
+    indexedAt: meta.indexedAt!,
+    stats: meta.stats,
+  };
+}
+
+/**
+ * Get the effective revision identifier for a RepoMeta.
+ * Returns lastRevision if available, otherwise falls back to lastCommit.
+ */
+export function getEffectiveRevision(meta: RepoMeta): string {
+  return meta.lastRevision ?? meta.lastCommit;
+}
+
+/**
+ * Get the VCS type for a RepoMeta.
+ * Returns vcsType if available, otherwise returns 'git' for backward compatibility.
+ */
+export function getVCSType(meta: RepoMeta): VCSType {
+  return meta.vcsType ?? 'git';
+}
+
 // ─── Global Registry (~/.gitnexus/registry.json) ───────────────────────
 
 /**
@@ -266,6 +329,8 @@ export const registerRepo = async (repoPath: string, meta: RepoMeta): Promise<vo
     storagePath,
     indexedAt: meta.indexedAt,
     lastCommit: meta.lastCommit,
+    vcsType: meta.vcsType ?? 'git',
+    lastRevision: meta.lastRevision ?? meta.lastCommit,
     stats: meta.stats,
   };
 

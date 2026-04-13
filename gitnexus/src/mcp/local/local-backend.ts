@@ -170,7 +170,10 @@ interface RepoHandle {
   storagePath: string;
   lbugPath: string;
   indexedAt: string;
+  /** @deprecated Use lastRevision */
   lastCommit: string;
+  vcsType?: import('../../storage/repo-manager.js').VCSType;
+  lastRevision?: string;
   stats?: RegistryEntry['stats'];
 }
 
@@ -247,6 +250,8 @@ export class LocalBackend {
         lbugPath,
         indexedAt: entry.indexedAt,
         lastCommit: entry.lastCommit,
+        vcsType: entry.vcsType ?? 'git',
+        lastRevision: entry.lastRevision ?? entry.lastCommit,
         stats: entry.stats,
       };
 
@@ -438,7 +443,15 @@ export class LocalBackend {
    * without restarting the MCP server.
    */
   async listRepos(): Promise<
-    Array<{ name: string; path: string; indexedAt: string; lastCommit: string; stats?: any }>
+    Array<{
+      name: string;
+      path: string;
+      indexedAt: string;
+      lastCommit: string;
+      vcsType?: string;
+      lastRevision?: string;
+      stats?: any;
+    }>
   > {
     await this.refreshRepos();
     return [...this.repos.values()].map((h) => ({
@@ -446,6 +459,8 @@ export class LocalBackend {
       path: h.repoPath,
       indexedAt: h.indexedAt,
       lastCommit: h.lastCommit,
+      vcsType: h.vcsType,
+      lastRevision: h.lastRevision,
       stats: h.stats,
     }));
   }
@@ -1015,6 +1030,8 @@ export class LocalBackend {
       stats: repo.stats,
       indexedAt: repo.indexedAt,
       lastCommit: repo.lastCommit,
+      vcsType: repo.vcsType,
+      lastRevision: repo.lastRevision,
     };
 
     if (params.showClusters !== false) {
