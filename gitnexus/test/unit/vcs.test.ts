@@ -9,11 +9,22 @@ import { mkdtempSync, writeFileSync, mkdirSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { execSync } from 'child_process';
+import { pathToFileURL } from 'url';
 
 import { hasGitDir, hasSVNDir, detectVCSType } from '../../src/storage/vcs.js';
 import { GitAdapter } from '../../src/storage/vcs-git.js';
 import { SVNAdapter } from '../../src/storage/vcs-svn.js';
 import { createVCSAdapter, getVCSRoot, hasVCSDir } from '../../src/storage/vcs-factory.js';
+
+// Detect SVN availability synchronously at module load time so that conditional tests work
+const svnAvailable = (() => {
+  try {
+    execSync('svn --version', { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+})();
 
 describe('VCS Detection', () => {
   let tempDir: string;
@@ -211,18 +222,6 @@ describe('SVNAdapter', () => {
   let tempDir: string;
   let adapter: SVNAdapter | null;
   let repoDir: string;
-  let svnAvailable = false;
-
-  beforeAll(() => {
-    // Check if svn is available
-    try {
-      execSync('svn --version', { stdio: 'ignore' });
-      svnAvailable = true;
-    } catch {
-      // SVN is not available
-      svnAvailable = false;
-    }
-  });
 
   beforeEach(() => {
     if (!svnAvailable) {
@@ -237,12 +236,15 @@ describe('SVNAdapter', () => {
     execSync(`svnadmin create "${repoDir}"`, { stdio: 'ignore' });
 
     // Checkout working copy
-    execSync(`svn checkout "file://${repoDir}" "${wcDir}"`, { stdio: 'ignore' });
+    const repoUrl = pathToFileURL(repoDir).href;
+    execSync(`svn checkout "${repoUrl}" "${wcDir}"`, { stdio: 'ignore' });
 
     // Create initial commit
     writeFileSync(join(wcDir, 'file.txt'), 'hello');
     execSync('svn add file.txt', { cwd: wcDir, stdio: 'ignore' });
     execSync('svn commit -m "initial"', { cwd: wcDir, stdio: 'ignore' });
+    // Update working copy so that its BASE revision matches HEAD after commit
+    execSync('svn update', { cwd: wcDir, stdio: 'ignore' });
 
     adapter = createVCSAdapter(wcDir) as SVNAdapter;
   });

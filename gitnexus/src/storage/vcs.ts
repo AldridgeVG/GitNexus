@@ -102,7 +102,12 @@ export function hasSVNDir(dirPath: string): boolean {
  */
 export function getGitRoot(fromPath: string): string | null {
   try {
-    const raw = execSync('git rev-parse --show-toplevel', { cwd: fromPath }).toString().trim();
+    const raw = execSync('git rev-parse --show-toplevel', {
+      cwd: fromPath,
+      stdio: ['pipe', 'pipe', 'ignore'],
+    })
+      .toString()
+      .trim();
     // On Windows, git returns /d/Projects/Foo — path.resolve normalizes to D:\Projects\Foo
     return path.resolve(raw);
   } catch {
@@ -115,15 +120,13 @@ export function getGitRoot(fromPath: string): string | null {
  */
 export function getSVNRoot(fromPath: string): string | null {
   try {
-    const raw = execSync('svn info --show-item working-copy-root-url', { cwd: fromPath })
+    // SVN 1.14+ supports 'wc-root' which returns the local working copy root path.
+    const wcRoot = execSync('svn info --show-item wc-root', {
+      cwd: fromPath,
+      stdio: ['pipe', 'pipe', 'ignore'],
+    })
       .toString()
       .trim();
-    // Convert URL to local path if it's a file:// URL
-    if (raw.startsWith('file://')) {
-      return path.resolve(raw.replace('file://', ''));
-    }
-    // For working copy paths, we need the actual root
-    const wcRoot = execSync('svn info --show-item wc-root', { cwd: fromPath }).toString().trim();
     return path.resolve(wcRoot);
   } catch {
     return null;
