@@ -170,7 +170,7 @@ export class HttpRouteExtractor implements ContractExtractor {
         return [];
       }
       try {
-        parser.setLanguage(plugin.language);
+        parser.setLanguage(plugin.language as any);
         const tree = parser.parse(content);
         const detections = plugin.scan(tree);
         cachedDetections.set(rel, detections);
