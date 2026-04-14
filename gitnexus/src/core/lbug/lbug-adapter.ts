@@ -261,6 +261,7 @@ export const loadGraphToLbug = async (
       input: createReadStream(csvResult.relCsvPath, 'utf-8'),
       crlfDelay: Infinity,
     });
+    const pendingDrain = new Set<import('fs').WriteStream>();
     let isFirst = true;
     rl.on('line', (line) => {
       if (isFirst) {
@@ -297,7 +298,13 @@ export const loadGraphToLbug = async (
       // on repos with millions of relationships.
       if (!ok) {
         rl.pause();
-        ws.once('drain', () => rl.resume());
+        if (!pendingDrain.has(ws)) {
+          pendingDrain.add(ws);
+          ws.once('drain', () => {
+            pendingDrain.delete(ws);
+            rl.resume();
+          });
+        }
       }
     });
     rl.on('close', resolve);
@@ -983,6 +990,13 @@ export const loadFTSExtension = async (): Promise<void> => {
     }
   }
 };
+const EXTENSION_INSTALL_TIMEOUT_MS = 10000;
+
+const isExtensionAlreadyLoaded = (msg: string): boolean =>
+  msg.includes('already loaded') ||
+  msg.includes('already installed') ||
+  msg.includes('already exists');
+
 /**
  * Load the VECTOR extension (required before using QUERY_VECTOR_INDEX).
  * Safe to call multiple times -- tracks loaded state via module-level vectorExtensionLoaded.
@@ -993,19 +1007,36 @@ export const loadVectorExtension = async (): Promise<void> => {
     throw new Error('LadybugDB not initialized. Call initLbug first.');
   }
   try {
-    await conn.query('INSTALL VECTOR');
+    // Fast path: extension already installed locally (no network)
     await conn.query('LOAD EXTENSION VECTOR');
     vectorExtensionLoaded = true;
-  } catch (err: any) {
-    const msg = err?.message || '';
-    if (
-      msg.includes('already loaded') ||
-      msg.includes('already installed') ||
-      msg.includes('already exists')
-    ) {
+    return;
+  } catch (loadErr: any) {
+    const loadMsg = loadErr?.message || '';
+    if (isExtensionAlreadyLoaded(loadMsg)) {
       vectorExtensionLoaded = true;
-    } else {
-      console.error('GitNexus: VECTOR extension load failed:', msg);
+      return;
+    }
+    // Try downloading with a timeout to avoid hanging on blocked/slow networks
+    try {
+      await Promise.race([
+        conn.query('INSTALL VECTOR'),
+        new Promise<void>((_, reject) =>
+          setTimeout(
+            () => reject(new Error('INSTALL VECTOR timed out')),
+            EXTENSION_INSTALL_TIMEOUT_MS,
+          ),
+        ),
+      ]);
+      await conn.query('LOAD EXTENSION VECTOR');
+      vectorExtensionLoaded = true;
+    } catch (installErr: any) {
+      const msg = installErr?.message || '';
+      if (isExtensionAlreadyLoaded(msg)) {
+        vectorExtensionLoaded = true;
+      } else {
+        console.warn('GitNexus: VECTOR extension load failed:', msg.slice(0, 120));
+      }
     }
   }
 };
