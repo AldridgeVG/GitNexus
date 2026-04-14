@@ -13,8 +13,8 @@ import { execFileSync } from 'child_process';
 import v8 from 'v8';
 import cliProgress from 'cli-progress';
 import { closeLbug } from '../core/lbug/lbug-adapter.js';
-import { getStoragePaths, getGlobalRegistryPath } from '../storage/repo-manager.js';
-import { getVCSRoot, detectVCSType } from '../storage/vcs-factory.js';
+import { getGlobalRegistryPath, getStoragePaths } from '../storage/repo-manager.js';
+import { detectVCSType, getVCSRoot } from '../storage/vcs-factory.js';
 import { runFullAnalysis } from '../core/run-analyze.js';
 import fs from 'fs/promises';
 
@@ -56,8 +56,8 @@ export interface AnalyzeOptions {
   /** Skip AGENTS.md and CLAUDE.md gitnexus block updates. */
   skipAgentsMd?: boolean;
   /** Index the folder even when no .git directory is present. */
-  skipGit?: boolean;
   /** @deprecated Use skipVcs instead */
+  skipGit?: boolean;
   skipVcs?: boolean;
   /** Omit volatile symbol/relationship counts from AGENTS.md and CLAUDE.md. */
   noStats?: boolean;
