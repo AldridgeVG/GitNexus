@@ -146,6 +146,49 @@ describe('TypeScript call resolution with arity filtering', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Generic function call resolution: await fn<T>(args) creates CALLS edges
+// ---------------------------------------------------------------------------
+
+describe('TypeScript generic awaited call resolution', () => {
+  let result: PipelineResult;
+
+  beforeAll(async () => {
+    result = await runPipelineFromRepo(path.join(FIXTURES, 'typescript-generic-calls'), () => {});
+  }, 60000);
+
+  it('resolves authenticateUser → verifyToken via awaited generic call', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const authCall = calls.find(
+      (c) => c.source === 'authenticateUser' && c.target === 'verifyToken',
+    );
+    expect(authCall).toBeDefined();
+    expect(authCall!.targetFilePath).toBe('src/token.ts');
+  });
+
+  it('resolves authenticateAdmin → verifyToken via awaited generic call', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const adminCall = calls.find(
+      (c) => c.source === 'authenticateAdmin' && c.target === 'verifyToken',
+    );
+    expect(adminCall).toBeDefined();
+    expect(adminCall!.targetFilePath).toBe('src/token.ts');
+  });
+
+  it('resolves authenticateGuest → verify via awaited generic member call', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const guestCall = calls.find((c) => c.source === 'authenticateGuest' && c.target === 'verify');
+    expect(guestCall).toBeDefined();
+    expect(guestCall!.targetFilePath).toBe('src/service.ts');
+  });
+
+  it('verifyToken has exactly 2 incoming CALLS edges (both free-call callers resolved)', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const incoming = calls.filter((c) => c.target === 'verifyToken');
+    expect(incoming.length).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Member-call resolution: obj.method() resolves through pipeline
 // ---------------------------------------------------------------------------
 
@@ -519,6 +562,16 @@ describe('TypeScript constructor-inferred type resolution', () => {
     expect(saveMethods.length).toBe(2);
   });
 
+  it('resolves explicit constructor calls for User and Repo', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const userCtor = calls.find((c) => c.target === 'User' && c.targetFilePath === 'src/user.ts');
+    const repoCtor = calls.find((c) => c.target === 'Repo' && c.targetFilePath === 'src/repo.ts');
+    expect(userCtor).toBeDefined();
+    expect(repoCtor).toBeDefined();
+    expect(userCtor!.targetLabel).toBe('Class');
+    expect(repoCtor!.targetLabel).toBe('Class');
+  });
+
   it('resolves user.save() to src/user.ts via constructor-inferred type', () => {
     const calls = getRelationships(result, 'CALLS');
     const userSave = calls.find((c) => c.target === 'save' && c.targetFilePath === 'src/user.ts');
@@ -537,6 +590,14 @@ describe('TypeScript constructor-inferred type resolution', () => {
     const calls = getRelationships(result, 'CALLS');
     const saveCalls = calls.filter((c) => c.target === 'save');
     expect(saveCalls.length).toBe(2);
+  });
+
+  it('resolves constructor calls for both User and Repo', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const userCtor = calls.find((c) => c.target === 'User');
+    const repoCtor = calls.find((c) => c.target === 'Repo');
+    expect(userCtor).toBeDefined();
+    expect(repoCtor).toBeDefined();
   });
 });
 
@@ -2535,5 +2596,40 @@ describe('TypeScript same-arity overload cross-file resolution', () => {
         e.targetFilePath.includes('ilookup'),
     );
     expect(edges.length).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SM-9: lookupMethodByOwnerWithMRO — child.parentMethod() via first-wins walk
+// ---------------------------------------------------------------------------
+
+describe('TypeScript Child extends Parent — inherited method resolution (SM-9)', () => {
+  let result: PipelineResult;
+
+  beforeAll(async () => {
+    result = await runPipelineFromRepo(
+      path.join(FIXTURES, 'typescript-child-extends-parent'),
+      () => {},
+    );
+  }, 60000);
+
+  it('detects Parent and Child classes', () => {
+    const classes = getNodesByLabel(result, 'Class');
+    expect(classes).toContain('Parent');
+    expect(classes).toContain('Child');
+  });
+
+  it('emits EXTENDS edge: Child → Parent', () => {
+    const extends_ = getRelationships(result, 'EXTENDS');
+    expect(edgeSet(extends_)).toContain('Child → Parent');
+  });
+
+  it('resolves c.parentMethod() to Parent.parentMethod via first-wins MRO walk', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const parentMethodCall = calls.find(
+      (c) => c.target === 'parentMethod' && c.targetFilePath.includes('Parent.ts'),
+    );
+    expect(parentMethodCall).toBeDefined();
+    expect(parentMethodCall!.source).toBe('run');
   });
 });

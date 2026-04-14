@@ -63,6 +63,41 @@ export const hasGitDir = (dirPath: string): boolean => {
   }
 };
 
+export interface DiffHunk {
+  startLine: number;
+  endLine: number;
+}
+
+export interface FileDiff {
+  filePath: string;
+  hunks: DiffHunk[];
+}
+
+/**
+ * Parse unified diff output (with -U0) into per-file hunk ranges.
+ * Extracts the new-file line ranges from @@ hunk headers.
+ */
+export function parseDiffHunks(diffOutput: string): FileDiff[] {
+  const files: FileDiff[] = [];
+  let current: FileDiff | null = null;
+  for (const line of diffOutput.split('\n')) {
+    if (line.startsWith('+++ b/')) {
+      current = { filePath: line.slice(6), hunks: [] };
+      files.push(current);
+    } else if (line.startsWith('@@') && current) {
+      const match = line.match(/@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/);
+      if (match) {
+        const start = parseInt(match[1], 10);
+        const count = match[2] !== undefined ? parseInt(match[2], 10) : 1;
+        if (count > 0) {
+          current.hunks.push({ startLine: start, endLine: start + count - 1 });
+        }
+      }
+    }
+  }
+  return files;
+}
+
 // Re-export VCS types and factory for convenience
 export {
   createVCSAdapter,

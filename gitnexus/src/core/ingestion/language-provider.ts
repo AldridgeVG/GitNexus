@@ -9,7 +9,7 @@
  * so adding a language to the enum without creating a provider is a compiler error.
  */
 
-import type { SupportedLanguages } from 'gitnexus-shared';
+import type { SupportedLanguages, MroStrategy } from 'gitnexus-shared';
 import type { LanguageTypeConfig } from './type-extractors/types.js';
 import type { CallRouter } from './call-routing.js';
 import type { ClassExtractor } from './class-types.js';
@@ -26,13 +26,10 @@ import type { NodeLabel } from 'gitnexus-shared';
 export type CaptureMap = Record<string, SyntaxNode | undefined>;
 
 // ── Strategy tag types ─────────────────────────────────────────────────────
-/** MRO strategy for multiple inheritance resolution. */
-export type MroStrategy =
-  | 'first-wins'
-  | 'c3'
-  | 'leftmost-base'
-  | 'implements-split'
-  | 'qualified-syntax';
+// NOTE: `MroStrategy` is defined in `gitnexus-shared` and re-exported above
+// so `core/ingestion/model/resolve.ts` can consume it without importing from
+// this file (which would pull in the full language-registry dependency graph).
+
 /** How a language handles imports — determines wildcard synthesis behavior. */
 export type ImportSemantics = 'named' | 'wildcard' | 'namespace';
 
@@ -91,6 +88,16 @@ interface LanguageProviderConfig {
     addImportEdge: (src: string, target: string) => void,
     projectConfig: unknown,
   ) => void;
+
+  // ── Enclosing owner resolution ─────────────────────────────────
+  /** Resolve a container node during enclosing-owner tree walks.
+   *  Called when a CLASS_CONTAINER_TYPES node is found while walking up.
+   *  - Return a different SyntaxNode to remap the container (e.g., Ruby
+   *    singleton_class → enclosing class/module).
+   *  - Return null to skip this container and keep walking up.
+   *  - Omit (undefined) to use the container node as-is (default).
+   *  Default: undefined (no remapping). */
+  readonly resolveEnclosingOwner?: (node: SyntaxNode) => SyntaxNode | null;
 
   // ── Enclosing function resolution ───────────────────────────────
   /** Resolve the enclosing function name + label from an AST ancestor node

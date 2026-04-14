@@ -1262,6 +1262,33 @@ describe('Ruby method enrichment (visibility, isStatic, parameters)', () => {
   });
 });
 
+describe('Ruby singleton_class handling via sequential path (skipWorkers)', () => {
+  let result: PipelineResult;
+
+  beforeAll(async () => {
+    result = await runPipelineFromRepo(path.join(FIXTURES, 'ruby-method-enrichment'), () => {}, {
+      skipWorkers: true,
+    });
+  }, 60000);
+
+  it('keeps Animal as the owner for class << self methods', () => {
+    const hasMethod = getRelationships(result, 'HAS_METHOD');
+    expect(
+      hasMethod.find((e) => e.source === 'Animal' && e.target === 'from_habitat'),
+    ).toBeDefined();
+  });
+
+  it('marks from_habitat as static in the sequential path', () => {
+    const methods = getNodesByLabelFull(result, 'Method');
+    const fromHabitat = methods.find(
+      (m) => m.name === 'from_habitat' && m.properties.filePath?.includes('animal'),
+    );
+    expect(fromHabitat).toBeDefined();
+    expect(fromHabitat!.properties.isStatic).toBe(true);
+    expect(fromHabitat!.properties.parameterCount).toBe(1);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Overload Dispatch: methods with different arity resolve via receiver type
 // ---------------------------------------------------------------------------
@@ -1328,5 +1355,32 @@ describe('Ruby overload dispatch (format vs format_with_prefix)', () => {
     // Ruby top-level def is parsed as a method node (tree-sitter `method` type)
     const methods = getNodesByLabel(result, 'Method');
     expect(methods).toContain('run');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SM-9/SM-10: lookupMethodByOwnerWithMRO + D0 fast path — Ruby first-wins
+// ---------------------------------------------------------------------------
+
+describe('Ruby Child extends Parent — inherited method resolution (SM-9)', () => {
+  let result: PipelineResult;
+
+  beforeAll(async () => {
+    result = await runPipelineFromRepo(path.join(FIXTURES, 'ruby-child-extends-parent'), () => {});
+  }, 60000);
+
+  it('detects Parent and Child classes', () => {
+    const classes = getNodesByLabel(result, 'Class');
+    expect(classes).toContain('Parent');
+    expect(classes).toContain('Child');
+  });
+
+  it('resolves c.parent_method to Parent#parent_method via first-wins MRO walk', () => {
+    const calls = getRelationships(result, 'CALLS');
+    const parentMethodCall = calls.find(
+      (c) => c.target === 'parent_method' && c.targetFilePath.includes('parent.rb'),
+    );
+    expect(parentMethodCall).toBeDefined();
+    expect(parentMethodCall!.source).toBe('run');
   });
 });
