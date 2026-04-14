@@ -4,11 +4,12 @@
  * Shows the indexing status of the current repository.
  */
 
+import path from 'path';
 import { findRepo, getStoragePaths, hasKuzuIndex, getVCSType } from '../storage/repo-manager.js';
 import { createVCSAdapter, getVCSRoot } from '../storage/vcs-factory.js';
 
-export const statusCommand = async () => {
-  const cwd = process.cwd();
+export const statusCommand = async (repoPathArg?: string) => {
+  const cwd = repoPathArg ? path.resolve(repoPathArg) : process.cwd();
 
   const vcsAdapter = createVCSAdapter(cwd);
   if (!vcsAdapter) {
