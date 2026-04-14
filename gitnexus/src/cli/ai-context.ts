@@ -9,6 +9,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { glob } from 'glob';
 import { type GeneratedSkillInfo } from './skill-gen.js';
 
 // ESM equivalent of __dirname
@@ -323,6 +324,69 @@ Use GitNexus tools to accomplish this task.
 }
 
 /**
+ * Check whether the repository contains any Pascal/Delphi source files.
+ */
+async function hasPascalFiles(repoPath: string): Promise<boolean> {
+  const patterns = ['**/*.pas', '**/*.pp', '**/*.dpr', '**/*.lpr', '**/*.dpk', '**/*.inc'];
+  for (const pattern of patterns) {
+    const matches = await glob(pattern, {
+      cwd: repoPath,
+      nodir: true,
+      absolute: false,
+      ignore: ['node_modules/**', '.git/**', '.gitnexus/**', '.svn/**'],
+    });
+    if (matches.length > 0) return true;
+  }
+  return false;
+}
+
+/**
+ * Recursively copy a directory tree.
+ */
+async function copyDirRecursive(src: string, dest: string): Promise<void> {
+  await fs.mkdir(dest, { recursive: true });
+  const entries = await fs.readdir(src, { withFileTypes: true });
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      await copyDirRecursive(srcPath, destPath);
+    } else {
+      await fs.copyFile(srcPath, destPath);
+    }
+  }
+}
+
+/**
+ * Install Pascal/Delphi rules to .claude/rules/pascal/ when the repo
+ * contains Pascal source files. The folder name 'pascal' matches
+ * SupportedLanguages.Pascal in gitnexus-shared.
+ */
+async function installPascalRules(repoPath: string): Promise<string[]> {
+  if (!(await hasPascalFiles(repoPath))) return [];
+
+  const rulesSrc = path.join(__dirname, '..', '..', 'rules', 'pascal');
+  const rulesDest = path.join(repoPath, '.claude', 'rules', 'pascal');
+
+  try {
+    await fs.access(rulesSrc);
+  } catch {
+    return [];
+  }
+
+  try {
+    await fs.rm(rulesDest, { recursive: true, force: true });
+  } catch {
+    /* may not exist */
+  }
+  await fs.mkdir(rulesDest, { recursive: true });
+  await copyDirRecursive(rulesSrc, rulesDest);
+
+  const files = await fs.readdir(rulesDest);
+  return files;
+}
+
+/**
  * Generate AI context files after indexing
  */
 export async function generateAIContextFiles(
@@ -362,6 +426,12 @@ export async function generateAIContextFiles(
   const installedSkills = await installSkills(repoPath);
   if (installedSkills.length > 0) {
     createdFiles.push(`.claude/skills/gitnexus/ (${installedSkills.length} skills)`);
+  }
+
+  // Install Pascal/Delphi rules when applicable
+  const pascalRuleFiles = await installPascalRules(repoPath);
+  if (pascalRuleFiles.length > 0) {
+    createdFiles.push(`.claude/rules/pascal/ (${pascalRuleFiles.length} files)`);
   }
 
   return { files: createdFiles };
