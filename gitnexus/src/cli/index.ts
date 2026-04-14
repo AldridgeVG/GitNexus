@@ -62,7 +62,7 @@ program
   .action(createLazyAction(() => import('./list.js'), 'listCommand'));
 
 program
-  .command('status')
+  .command('status [path]')
   .description('Show index status for current repo')
   .action(createLazyAction(() => import('./status.js'), 'statusCommand'));
 
