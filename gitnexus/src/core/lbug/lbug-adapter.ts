@@ -1,5 +1,5 @@
 import fs from 'fs/promises';
-import { createReadStream } from 'fs';
+import { createReadStream, createWriteStream } from 'fs';
 import { createInterface } from 'readline';
 import path from 'path';
 import lbug from '@ladybugdb/core';
@@ -17,6 +17,7 @@ let db: lbug.Database | null = null;
 let conn: lbug.Connection | null = null;
 let currentDbPath: string | null = null;
 let ftsLoaded = false;
+let vectorExtensionLoaded = false;
 
 /** Expose the current Database for pool adapter reuse in tests. */
 export const getDatabase = (): lbug.Database | null => db;
@@ -104,6 +105,7 @@ export const withLbugDb = async <T>(dbPath: string, operation: () => Promise<T>)
         db = null;
         currentDbPath = null;
         ftsLoaded = false;
+        vectorExtensionLoaded = false;
       });
       // Sleep outside the lock — no need to block others while waiting
       await new Promise((resolve) => setTimeout(resolve, DB_LOCK_RETRY_DELAY_MS * attempt));
@@ -135,6 +137,7 @@ const doInitLbug = async (dbPath: string) => {
     db = null;
     currentDbPath = null;
     ftsLoaded = false;
+    vectorExtensionLoaded = false;
   }
 
   // LadybugDB stores the database as a single file (not a directory).
@@ -181,6 +184,9 @@ const doInitLbug = async (dbPath: string) => {
       }
     }
   }
+
+  // Load VECTOR extension for semantic search support
+  await loadVectorExtension();
 
   currentDbPath = dbPath;
   return { db, conn };
@@ -241,9 +247,12 @@ export const loadGraphToLbug = async (
   }
 
   // Bulk COPY relationships — split by FROM→TO label pair (LadybugDB requires it)
-  // Stream-read the relation CSV line by line to avoid exceeding V8 max string length
+  // Stream-read the relation CSV line by line and write directly to per-pair
+  // temp files on disk. This avoids accumulating potentially millions of CSV
+  // lines in memory which could exceed V8 Map or array limits on large repos.
   let relHeader = '';
-  const relsByPair = new Map<string, string[]>();
+  const relsByPairMeta = new Map<string, { csvPath: string; rows: number }>();
+  const pairWriteStreams = new Map<string, import('fs').WriteStream>();
   let skippedRels = 0;
   let totalValidRels = 0;
 
@@ -272,37 +281,60 @@ export const loadGraphToLbug = async (
         return;
       }
       const pairKey = `${fromLabel}|${toLabel}`;
-      let list = relsByPair.get(pairKey);
-      if (!list) {
-        list = [];
-        relsByPair.set(pairKey, list);
+      let ws = pairWriteStreams.get(pairKey);
+      if (!ws) {
+        const pairCsvPath = path.join(csvDir, `rel_${fromLabel}_${toLabel}.csv`);
+        ws = createWriteStream(pairCsvPath, 'utf-8');
+        ws.write(relHeader + '\n');
+        pairWriteStreams.set(pairKey, ws);
+        relsByPairMeta.set(pairKey, { csvPath: pairCsvPath, rows: 0 });
       }
-      list.push(line);
+      const ok = ws.write(line + '\n');
+      relsByPairMeta.get(pairKey)!.rows++;
       totalValidRels++;
+      // Handle backpressure: pause reading when the write buffer is full,
+      // resume when the stream drains. Prevents unbounded memory growth
+      // on repos with millions of relationships.
+      if (!ok) {
+        rl.pause();
+        ws.once('drain', () => rl.resume());
+      }
     });
     rl.on('close', resolve);
-    rl.on('error', reject);
+    rl.on('error', (err) => {
+      // Destroy all open write streams to avoid resource leaks
+      for (const ws of pairWriteStreams.values()) ws.destroy();
+      reject(err);
+    });
   });
+
+  // Close all per-pair write streams before COPY
+  await Promise.all(
+    Array.from(pairWriteStreams.values()).map(
+      (ws) =>
+        new Promise<void>((resolve, reject) =>
+          ws.end((err: Error | undefined) => (err ? reject(err) : resolve())),
+        ),
+    ),
+  );
 
   const insertedRels = totalValidRels;
   const warnings: string[] = [];
   if (insertedRels > 0) {
-    log(`Loading edges: ${insertedRels.toLocaleString()} across ${relsByPair.size} types`);
+    log(`Loading edges: ${insertedRels.toLocaleString()} across ${relsByPairMeta.size} types`);
 
     let pairIdx = 0;
     let failedPairEdges = 0;
-    const failedPairLines: string[] = [];
+    const failedPairCsvPaths = new Set<string>();
 
-    for (const [pairKey, lines] of relsByPair) {
+    for (const [pairKey, { csvPath: pairCsvPath, rows }] of relsByPairMeta) {
       pairIdx++;
       const [fromLabel, toLabel] = pairKey.split('|');
-      const pairCsvPath = path.join(csvDir, `rel_${fromLabel}_${toLabel}.csv`);
-      await fs.writeFile(pairCsvPath, relHeader + '\n' + lines.join('\n'), 'utf-8');
       const normalizedPath = normalizeCopyPath(pairCsvPath);
       const copyQuery = `COPY ${REL_TABLE_NAME} FROM "${normalizedPath}" (from="${fromLabel}", to="${toLabel}", HEADER=true, ESCAPE='"', DELIM=',', QUOTE='"', PARALLEL=false, auto_detect=false)`;
 
-      if (pairIdx % 5 === 0 || lines.length > 1000) {
-        log(`Loading edges: ${pairIdx}/${relsByPair.size} types (${fromLabel} -> ${toLabel})`);
+      if (pairIdx % 5 === 0 || rows > 1000) {
+        log(`Loading edges: ${pairIdx}/${relsByPairMeta.size} types (${fromLabel} -> ${toLabel})`);
       }
 
       try {
@@ -316,21 +348,39 @@ export const loadGraphToLbug = async (
           await conn.query(retryQuery);
         } catch (retryErr) {
           const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
-          warnings.push(
-            `${fromLabel}->${toLabel} (${lines.length} edges): ${retryMsg.slice(0, 80)}`,
-          );
-          failedPairEdges += lines.length;
-          failedPairLines.push(...lines);
+          warnings.push(`${fromLabel}->${toLabel} (${rows} edges): ${retryMsg.slice(0, 80)}`);
+          failedPairEdges += rows;
+          failedPairCsvPaths.add(pairCsvPath);
         }
       }
-      try {
-        await fs.unlink(pairCsvPath);
-      } catch {}
+      // Only delete if not in failedPairCsvPaths (needed for fallback)
+      if (!failedPairCsvPaths.has(pairCsvPath)) {
+        try {
+          await fs.unlink(pairCsvPath);
+        } catch {}
+      }
     }
 
-    if (failedPairLines.length > 0) {
+    if (failedPairCsvPaths.size > 0) {
       log(`Inserting ${failedPairEdges} edges individually (missing schema pairs)`);
-      await fallbackRelationshipInserts([relHeader, ...failedPairLines], validTables, getNodeLabel);
+      // Read failed pair files and merge for fallback inserts
+      const allLines: string[] = [relHeader];
+      for (const failedPath of failedPairCsvPaths) {
+        try {
+          const content = await fs.readFile(failedPath, 'utf-8');
+          const lines = content.split('\n');
+          // Skip header line (first) and empty lines
+          for (let i = 1; i < lines.length; i++) {
+            if (lines[i].trim()) allLines.push(lines[i]);
+          }
+        } catch {}
+        try {
+          await fs.unlink(failedPath);
+        } catch {}
+      }
+      if (allLines.length > 1) {
+        await fallbackRelationshipInserts(allLines, validTables, getNodeLabel);
+      }
     }
   }
 
@@ -637,6 +687,34 @@ export const executeQuery = async (cypher: string): Promise<any[]> => {
   return rows;
 };
 
+export const streamQuery = async (
+  cypher: string,
+  onRow: (row: any) => void | Promise<void>,
+): Promise<number> => {
+  if (!conn) {
+    throw new Error('LadybugDB not initialized. Call initLbug first.');
+  }
+
+  const queryResult = await conn.query(cypher);
+  const result = Array.isArray(queryResult) ? queryResult[0] : queryResult;
+  let rowCount = 0;
+
+  try {
+    while (await result.hasNext()) {
+      const row = await result.getNext();
+      await onRow(row);
+      rowCount++;
+    }
+    return rowCount;
+  } finally {
+    try {
+      await result.close();
+    } catch {
+      // Best-effort cleanup only.
+    }
+  }
+};
+
 /**
  * Execute a single parameterized query (prepare/execute pattern).
  * Prevents Cypher injection by binding values as parameters.
@@ -779,6 +857,7 @@ export const closeLbug = async (): Promise<void> => {
   }
   currentDbPath = null;
   ftsLoaded = false;
+  vectorExtensionLoaded = false;
 };
 
 export const isLbugReady = (): boolean => conn !== null && db !== null;
@@ -881,9 +960,42 @@ export const loadFTSExtension = async (): Promise<void> => {
     throw new Error('LadybugDB not initialized. Call initLbug first.');
   }
   try {
-    await conn.query('INSTALL fts');
+    // Try loading locally first (no network required)
     await conn.query('LOAD EXTENSION fts');
     ftsLoaded = true;
+  } catch {
+    // Fall back to install + load (requires network)
+    try {
+      await conn.query('INSTALL fts');
+      await conn.query('LOAD EXTENSION fts');
+      ftsLoaded = true;
+    } catch (err: any) {
+      const msg = err?.message || '';
+      if (
+        msg.includes('already loaded') ||
+        msg.includes('already installed') ||
+        msg.includes('already exists')
+      ) {
+        ftsLoaded = true;
+      } else {
+        console.error('GitNexus: FTS extension load failed:', msg);
+      }
+    }
+  }
+};
+/**
+ * Load the VECTOR extension (required before using QUERY_VECTOR_INDEX).
+ * Safe to call multiple times -- tracks loaded state via module-level vectorExtensionLoaded.
+ */
+export const loadVectorExtension = async (): Promise<void> => {
+  if (vectorExtensionLoaded) return;
+  if (!conn) {
+    throw new Error('LadybugDB not initialized. Call initLbug first.');
+  }
+  try {
+    await conn.query('INSTALL VECTOR');
+    await conn.query('LOAD EXTENSION VECTOR');
+    vectorExtensionLoaded = true;
   } catch (err: any) {
     const msg = err?.message || '';
     if (
@@ -891,13 +1003,12 @@ export const loadFTSExtension = async (): Promise<void> => {
       msg.includes('already installed') ||
       msg.includes('already exists')
     ) {
-      ftsLoaded = true;
+      vectorExtensionLoaded = true;
     } else {
-      console.error('GitNexus: FTS extension load failed:', msg);
+      console.error('GitNexus: VECTOR extension load failed:', msg);
     }
   }
 };
-
 /**
  * Create a full-text search index on a table
  * @param tableName - The node table name (e.g., 'File', 'CodeSymbol')

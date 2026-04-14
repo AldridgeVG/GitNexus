@@ -56,7 +56,6 @@
     "commander": "^12.0.0",
     "cors": "^2.8.5",
     "express": "^4.19.2",
-    "gitnexus-shared": "file:../gitnexus-shared",
     "glob": "^11.0.0",
     "graphology": "^0.25.4",
     "graphology-indices": "^0.17.0",
@@ -82,8 +81,9 @@
     "uuid": "^13.0.0"
   },
   "optionalDependencies": {
-    "tree-sitter-dart": "github:UserNobody14/tree-sitter-dart#80e23c07b64494f7e21090bb3450223ef0b192f4",
+    "tree-sitter-dart": "https://github.com/UserNobody14/tree-sitter-dart/archive/80e23c07b64494f7e21090bb3450223ef0b192f4.tar.gz",
     "tree-sitter-kotlin": "^0.3.8",
+    "tree-sitter-proto": "file:./vendor/tree-sitter-proto",
     "tree-sitter-swift": "^0.6.0"
   },
   "devDependencies": {
@@ -103,7 +103,8 @@
     "@huggingface/transformers": {
       "onnxruntime-node": "$onnxruntime-node"
     },
-    "node-addon-api": "^8.3.0"
+    "node-addon-api": "^8.3.0",
+    "tree-sitter-c": "0.23.2"
   },
   "engines": {
     "node": ">=20.0.0"

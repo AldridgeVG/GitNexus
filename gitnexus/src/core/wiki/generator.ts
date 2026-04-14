@@ -12,7 +12,6 @@
 
 import fs from 'fs/promises';
 import path from 'path';
-import { execSync, execFileSync } from 'child_process';
 
 import {
   initWikiDb,
@@ -28,6 +27,8 @@ import {
   type FileWithExports,
 } from './graph-queries.js';
 import { generateHTMLViewer } from './html-viewer.js';
+import { createVCSAdapter } from '../../storage/vcs-factory.js';
+import type { VCSAdapter } from '../../storage/vcs.js';
 
 import {
   callLLM,
@@ -822,12 +823,13 @@ export class WikiGenerator {
 
   // ─── Helpers ────────────────────────────────────────────────────────
 
+  private getVCSAdapter(): VCSAdapter | null {
+    return createVCSAdapter(this.repoPath);
+  }
+
   private getCurrentCommit(): string {
-    try {
-      return execSync('git rev-parse HEAD', { cwd: this.repoPath }).toString().trim();
-    } catch {
-      return '';
-    }
+    const adapter = this.getVCSAdapter();
+    return adapter?.getCurrentCommit() ?? '';
   }
 
   /**
@@ -835,34 +837,22 @@ export class WikiGenerator {
    * Returns false if commits are on divergent branches or fromCommit doesn't exist.
    */
   private isCommitReachable(fromCommit: string, toCommit: string): boolean {
-    try {
-      execFileSync('git', ['merge-base', '--is-ancestor', fromCommit, toCommit], {
-        cwd: this.repoPath,
-        stdio: 'ignore',
-      });
-      return true;
-    } catch {
-      return false;
-    }
+    const adapter = this.getVCSAdapter();
+    if (!adapter) return false;
+    return adapter.isRevisionReachable(fromCommit, toCommit);
   }
 
   private getChangedFiles(fromCommit: string, toCommit: string): string[] | null {
+    const adapter = this.getVCSAdapter();
+    if (!adapter) return null;
+
     // First check if fromCommit is reachable from toCommit
     // This handles the case where wiki was generated on a different branch
     if (!this.isCommitReachable(fromCommit, toCommit)) {
       return null; // Signal that we can't compute diff (divergent branches)
     }
 
-    try {
-      const output = execFileSync('git', ['diff', `${fromCommit}..${toCommit}`, '--name-only'], {
-        cwd: this.repoPath,
-      })
-        .toString()
-        .trim();
-      return output ? output.split('\n').filter(Boolean) : [];
-    } catch {
-      return null; // Treat git errors as needing full regen
-    }
+    return adapter.getChangedFiles(fromCommit, toCommit);
   }
 
   private async readSourceFiles(filePaths: string[]): Promise<string> {

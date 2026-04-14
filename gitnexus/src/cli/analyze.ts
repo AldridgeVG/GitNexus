@@ -14,14 +14,17 @@ import v8 from 'v8';
 import cliProgress from 'cli-progress';
 import { closeLbug } from '../core/lbug/lbug-adapter.js';
 import { getStoragePaths, getGlobalRegistryPath } from '../storage/repo-manager.js';
-import { getGitRoot, hasGitDir } from '../storage/git.js';
+import { getVCSRoot, detectVCSType } from '../storage/vcs-factory.js';
 import { runFullAnalysis } from '../core/run-analyze.js';
 import fs from 'fs/promises';
 
 const HEAP_MB = 8192;
 const HEAP_FLAG = `--max-old-space-size=${HEAP_MB}`;
+/** Increase default stack size (KB) to prevent stack overflow on deep class hierarchies. */
+const STACK_KB = 4096;
+const STACK_FLAG = `--stack-size=${STACK_KB}`;
 
-/** Re-exec the process with an 8GB heap if we're currently below that. */
+/** Re-exec the process with an 8GB heap and larger stack if we're currently below that. */
 function ensureHeap(): boolean {
   const nodeOpts = process.env.NODE_OPTIONS || '';
   if (nodeOpts.includes('--max-old-space-size')) return false;
@@ -29,8 +32,13 @@ function ensureHeap(): boolean {
   const v8Heap = v8.getHeapStatistics().heap_size_limit;
   if (v8Heap >= HEAP_MB * 1024 * 1024 * 0.9) return false;
 
+  // --stack-size is a V8 flag not allowed in NODE_OPTIONS on Node 24+,
+  // so pass it only as a direct CLI argument, not via the environment.
+  const cliFlags = [HEAP_FLAG];
+  if (!nodeOpts.includes('--stack-size')) cliFlags.push(STACK_FLAG);
+
   try {
-    execFileSync(process.execPath, [HEAP_FLAG, ...process.argv.slice(1)], {
+    execFileSync(process.execPath, [...cliFlags, ...process.argv.slice(1)], {
       stdio: 'inherit',
       env: { ...process.env, NODE_OPTIONS: `${nodeOpts} ${HEAP_FLAG}`.trim() },
     });
@@ -49,6 +57,10 @@ export interface AnalyzeOptions {
   skipAgentsMd?: boolean;
   /** Index the folder even when no .git directory is present. */
   skipGit?: boolean;
+  /** @deprecated Use skipVcs instead */
+  skipVcs?: boolean;
+  /** Omit volatile symbol/relationship counts from AGENTS.md and CLAUDE.md. */
+  noStats?: boolean;
 }
 
 export const analyzeCommand = async (inputPath?: string, options?: AnalyzeOptions) => {
@@ -60,15 +72,17 @@ export const analyzeCommand = async (inputPath?: string, options?: AnalyzeOption
 
   console.log('\n  GitNexus Analyzer\n');
 
+  const skipVcs = options?.skipGit || options?.skipVcs;
+
   let repoPath: string;
   if (inputPath) {
     repoPath = path.resolve(inputPath);
   } else {
-    const gitRoot = getGitRoot(process.cwd());
-    if (!gitRoot) {
-      if (!options?.skipGit) {
+    const vcsRoot = getVCSRoot(process.cwd());
+    if (!vcsRoot) {
+      if (!skipVcs) {
         console.log(
-          '  Not inside a git repository.\n  Tip: pass --skip-git to index any folder without a .git directory.\n',
+          '  Not inside a version control repository.\n  Tip: pass --skip-git to index any folder without a VCS directory.\n',
         );
         process.exitCode = 1;
         return;
@@ -76,22 +90,27 @@ export const analyzeCommand = async (inputPath?: string, options?: AnalyzeOption
       // --skip-git: fall back to cwd as the root
       repoPath = path.resolve(process.cwd());
     } else {
-      repoPath = gitRoot;
+      repoPath = vcsRoot.root;
     }
   }
 
-  const repoHasGit = hasGitDir(repoPath);
-  if (!repoHasGit && !options?.skipGit) {
+  const vcsType = detectVCSType(repoPath);
+  const hasVcs = vcsType !== 'none';
+
+  if (!hasVcs && !skipVcs) {
     console.log(
-      '  Not a git repository.\n  Tip: pass --skip-git to index any folder without a .git directory.\n',
+      '  Not a version control repository.\n  Tip: pass --skip-git to index any folder without a VCS directory.\n',
     );
     process.exitCode = 1;
     return;
   }
-  if (!repoHasGit) {
+  if (!hasVcs) {
     console.log(
-      '  Warning: no .git directory found \u2014 commit-tracking and incremental updates disabled.\n',
+      '  Warning: no VCS directory found — revision-tracking and incremental updates disabled.\n',
     );
+  } else {
+    const vcsLabel = vcsType === 'git' ? 'Git' : vcsType === 'svn' ? 'SVN' : 'VCS';
+    console.log(`  Detected ${vcsLabel} repository.`);
   }
 
   // KuzuDB migration cleanup is handled by runFullAnalysis internally.
@@ -175,8 +194,9 @@ export const analyzeCommand = async (inputPath?: string, options?: AnalyzeOption
       {
         force: options?.force || options?.skills,
         embeddings: options?.embeddings,
-        skipGit: options?.skipGit,
+        skipGit: skipVcs,
         skipAgentsMd: options?.skipAgentsMd,
+        noStats: options?.noStats,
       },
       {
         onProgress: (_phase, percent, message) => {
@@ -240,7 +260,7 @@ export const analyzeCommand = async (inputPath?: string, options?: AnalyzeOption
               processes: s.processes,
             },
             skillResult.skills,
-            { skipAgentsMd: options?.skipAgentsMd },
+            { skipAgentsMd: options?.skipAgentsMd, noStats: options?.noStats },
           );
         }
       } catch {
@@ -282,7 +302,29 @@ export const analyzeCommand = async (inputPath?: string, options?: AnalyzeOption
     console.warn = origWarn;
     console.error = origError;
     bar.stop();
-    console.error(`\n  Analysis failed: ${err.message}\n`);
+
+    const msg = err.message || String(err);
+    console.error(`\n  Analysis failed: ${msg}\n`);
+
+    // Provide helpful guidance for known large-repo failure modes
+    if (
+      msg.includes('Maximum call stack size exceeded') ||
+      msg.includes('call stack') ||
+      msg.includes('Map maximum size') ||
+      msg.includes('Invalid array length') ||
+      msg.includes('Invalid string length') ||
+      msg.includes('allocation failed') ||
+      msg.includes('heap out of memory') ||
+      msg.includes('JavaScript heap')
+    ) {
+      console.error('  This error typically occurs on very large repositories.');
+      console.error('  Suggestions:');
+      console.error('    1. Add large vendored/generated directories to .gitnexusignore');
+      console.error('    2. Increase Node.js heap: NODE_OPTIONS="--max-old-space-size=16384"');
+      console.error('    3. Increase stack size: NODE_OPTIONS="--stack-size=4096"');
+      console.error('');
+    }
+
     process.exitCode = 1;
     return;
   }
