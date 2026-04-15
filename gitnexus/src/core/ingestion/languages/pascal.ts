@@ -1,4 +1,4 @@
-import { SupportedLanguages } from 'gitnexus-shared';
+import { SupportedLanguages, type NodeLabel } from 'gitnexus-shared';
 import { defineLanguage } from '../language-provider.js';
 import { pascalTypeConfig } from '../type-extractors/pascal.js';
 import { pascalExportChecker } from '../export-detection.js';
@@ -9,6 +9,20 @@ import { createFieldExtractor } from '../field-extractors/generic.js';
 import { pascalConfig } from '../field-extractors/configs/pascal.js';
 import { createMethodExtractor } from '../method-extractors/generic.js';
 import { pascalMethodConfig } from '../method-extractors/configs/pascal.js';
+import type { SyntaxNode } from '../utils/ast-helpers.js';
+
+function isPascalConstructorNode(node: SyntaxNode): boolean {
+  const header = node.childForFieldName('header');
+  if (header) {
+    for (let i = 0; i < header.childCount; i++) {
+      const child = header.child(i);
+      if (child?.type === 'kConstructor' || child?.type === 'kDestructor') {
+        return true;
+      }
+    }
+  }
+  return false;
+}
 
 export const pascalProvider = defineLanguage({
   id: SupportedLanguages.Pascal,
@@ -24,4 +38,11 @@ export const pascalProvider = defineLanguage({
 
   fieldExtractor: createFieldExtractor(pascalConfig),
   methodExtractor: createMethodExtractor(pascalMethodConfig),
+
+  labelOverride(node, defaultLabel): NodeLabel | null {
+    if (defaultLabel === 'Function' && isPascalConstructorNode(node)) {
+      return 'Constructor';
+    }
+    return defaultLabel;
+  },
 });
