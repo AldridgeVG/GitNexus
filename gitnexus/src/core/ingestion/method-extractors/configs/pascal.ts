@@ -134,4 +134,13 @@ export const pascalMethodConfig: MethodExtractionConfig = {
     }
     return hasOverride && !hasVirtual;
   },
+
+  extractFunctionName(node) {
+    const header = node.childForFieldName('header');
+    const nameNode = header?.childForFieldName('name') ?? node.childForFieldName('name');
+    if (nameNode) {
+      return { funcName: nameNode.text, label: 'Function' };
+    }
+    return undefined;
+  },
 };

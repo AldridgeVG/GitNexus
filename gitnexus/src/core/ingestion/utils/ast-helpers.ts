@@ -120,7 +120,6 @@ export const CLASS_CONTAINER_TYPES = new Set([
   'enum_item',
   'class_definition',
   'trait_declaration',
-  // PHP
   'enum_declaration',
   'protocol_declaration',
   // Dart
@@ -133,6 +132,10 @@ export const CLASS_CONTAINER_TYPES = new Set([
   // Kotlin
   'object_declaration',
   'companion_object',
+  // Pascal/Delphi
+  'declClass',
+  'declIntf',
+  'declHelper',
 ]);
 
 export const CONTAINER_TYPE_TO_LABEL: Record<string, string> = {
@@ -158,6 +161,10 @@ export const CONTAINER_TYPE_TO_LABEL: Record<string, string> = {
   singleton_class: 'Class', // Ruby: class << self inherits enclosing class name
   object_declaration: 'Class',
   companion_object: 'Class',
+  // Pascal/Delphi
+  declClass: 'Class',
+  declIntf: 'Interface',
+  declHelper: 'Class',
 };
 
 /**
@@ -436,7 +443,12 @@ export const inferFunctionLabel = (nodeType: string): NodeLabel =>
       : 'Function';
 
 /** Argument list node types shared between countCallArguments and call-resolution helpers. */
-export const CALL_ARGUMENT_LIST_TYPES = new Set(['arguments', 'argument_list', 'value_arguments']);
+export const CALL_ARGUMENT_LIST_TYPES = new Set([
+  'arguments',
+  'argument_list',
+  'value_arguments',
+  'exprArgs', // Pascal/Delphi
+]);
 
 // ============================================================================
 // Generic AST traversal helpers (shared by parse-worker + php-helpers)

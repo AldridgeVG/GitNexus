@@ -1307,6 +1307,11 @@ export const PASCAL_QUERIES = `
 ; Direct function/procedure calls
 (exprCall
   (identifier) @call.name) @call
+
+; Member method calls: Obj.Method()
+(exprCall
+  (exprDot
+    (identifier) @call.name)) @call
 `;
 
 import { SupportedLanguages } from 'gitnexus-shared';

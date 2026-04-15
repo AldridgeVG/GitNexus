@@ -9,6 +9,7 @@ export const CALL_EXPRESSION_TYPES = new Set([
   'nullsafe_member_call_expression', // PHP ?.
   'call', // Python/Ruby
   'invocation_expression', // C#
+  'exprCall', // Pascal/Delphi
 ]);
 
 /**
@@ -110,6 +111,11 @@ export const inferCallForm = (callNode: SyntaxNode, nameNode: SyntaxNode): CallF
   // 2. Member call: nameNode's parent is a member-access wrapper
   const nameParent = nameNode.parent;
   if (nameParent && MEMBER_ACCESS_NODE_TYPES.has(nameParent.type)) {
+    return 'member';
+  }
+
+  // 2b. Pascal/Delphi: exprCall > exprDot > identifier
+  if (nameParent?.type === 'exprDot') {
     return 'member';
   }
 
@@ -251,6 +257,11 @@ export const extractReceiverName = (nameNode: SyntaxNode): string | undefined =>
     }
   }
 
+  // Pascal/Delphi: exprDot — first named child is the receiver
+  if (!receiver && parent.type === 'exprDot') {
+    receiver = parent.firstNamedChild;
+  }
+
   if (!receiver) return undefined;
 
   // Only capture simple identifiers — refuse complex expressions
@@ -343,6 +354,11 @@ export const extractReceiverNode = (nameNode: SyntaxNode): SyntaxNode | undefine
         }
       }
     }
+  }
+
+  // Pascal/Delphi: exprDot — first named child is the receiver
+  if (!receiver && parent.type === 'exprDot') {
+    receiver = parent.firstNamedChild;
   }
 
   return receiver ?? undefined;
