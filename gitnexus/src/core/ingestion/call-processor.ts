@@ -2686,6 +2686,27 @@ export const processCallsFromExtracted = async (
         }
       }
 
+      // Pascal/Delphi symbol-table filter: bare exprDot without parentheses
+      // may be a property access rather than a procedure call. When the receiver
+      // type is known and the name resolves to a field/property in the symbol
+      // table, skip emitting a CALLS edge.
+      if (effectiveCall.isBareExprDot && effectiveCall.receiverTypeName) {
+        const typeResolved = ctx.resolve(effectiveCall.receiverTypeName, effectiveCall.filePath);
+        if (typeResolved) {
+          let isPropertyAccess = false;
+          for (const candidate of typeResolved.candidates) {
+            if (
+              CLASS_LIKE_TYPES.has(candidate.type) &&
+              ctx.model.fields.lookupFieldByOwner(candidate.nodeId, effectiveCall.calledName)
+            ) {
+              isPropertyAccess = true;
+              break;
+            }
+          }
+          if (isPropertyAccess) continue;
+        }
+      }
+
       let resolved = effectiveCall.isInherited
         ? resolveInheritedCall(effectiveCall, effectiveCall.filePath, ctx, heritageMap)
         : null;

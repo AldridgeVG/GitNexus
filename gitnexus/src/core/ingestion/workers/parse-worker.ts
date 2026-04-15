@@ -165,6 +165,12 @@ export interface ExtractedCall {
   callForm?: 'free' | 'member' | 'constructor';
   /** True for Pascal/Delphi inherited calls (e.g. inherited Create; / inherited;) */
   isInherited?: boolean;
+  /**
+   * True for Pascal/Delphi bare exprDot without parentheses (e.g. Obj.Property).
+   * Used in call-processor to disambiguate property access from procedure calls
+   * via symbol-table lookup.
+   */
+  isBareExprDot?: boolean;
   /** Simple identifier of the receiver for member calls (e.g., 'user' in user.save()) */
   receiverName?: string;
   /** Resolved type name of the receiver (e.g., 'User' for user.save() when user: User) */
@@ -1880,6 +1886,8 @@ const processFileGroup = (
                   )
                 : undefined;
 
+            const isBareExprDot =
+              language === SupportedLanguages.Pascal && callNode.type === 'exprDot';
             result.calls.push({
               filePath: file.path,
               calledName,
@@ -1887,6 +1895,7 @@ const processFileGroup = (
               argCount: countCallArguments(callNode),
               ...(callForm !== undefined ? { callForm } : {}),
               ...(isInherited ? { isInherited: true } : {}),
+              ...(isBareExprDot ? { isBareExprDot: true } : {}),
               ...(receiverName !== undefined ? { receiverName } : {}),
               ...(receiverTypeName !== undefined ? { receiverTypeName } : {}),
               ...(receiverMixedChain !== undefined ? { receiverMixedChain } : {}),

@@ -6,7 +6,8 @@
       "Bash(find . -name *pascal* -o -name *delphi*)",
       "Bash(npm test:*)",
       "Bash(npx tsx:*)",
-      "Bash(npx vitest:*)"
+      "Bash(npx vitest:*)",
+      "Bash(find . -name *pascal-inherited* -o -name *pascal* -type d)"
     ]
   }
 }

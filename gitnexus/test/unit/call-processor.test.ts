@@ -1365,6 +1365,73 @@ describe('processCallsFromExtracted', () => {
     expect(rels[0].sourceId).toBe('Function:src/index.ts:processUser');
     expect(rels[1].sourceId).toBe('Function:src/index.ts:processRepo');
   });
+
+  // ---- Pascal/Delphi bare exprDot symbol-table filter ----
+
+  it('skips CALLS for Pascal bare exprDot when name resolves to a property', async () => {
+    const classId = 'Class:src/widget.pas:TWidget';
+    const propId = 'Property:src/widget.pas:TWidget.Name';
+    ctx.model.symbols.add('src/widget.pas', 'TWidget', classId, 'Class');
+    ctx.model.symbols.add('src/widget.pas', 'Name', propId, 'Property', { ownerId: classId });
+
+    const calls: ExtractedCall[] = [
+      {
+        filePath: 'src/main.pas',
+        calledName: 'Name',
+        sourceId: 'Function:src/main.pas:main',
+        callForm: 'member',
+        receiverTypeName: 'TWidget',
+        isBareExprDot: true,
+      },
+    ];
+
+    await processCallsFromExtracted(graph, calls, ctx);
+    expect(graph.relationships.filter((r) => r.type === 'CALLS')).toHaveLength(0);
+  });
+
+  it('emits CALLS for Pascal bare exprDot when name resolves to a method', async () => {
+    const classId = 'Class:src/widget.pas:TWidget';
+    const methodId = 'Method:src/widget.pas:TWidget.Update';
+    ctx.model.symbols.add('src/widget.pas', 'TWidget', classId, 'Class');
+    ctx.model.symbols.add('src/widget.pas', 'Update', methodId, 'Method', { ownerId: classId });
+
+    const calls: ExtractedCall[] = [
+      {
+        filePath: 'src/main.pas',
+        calledName: 'Update',
+        sourceId: 'Function:src/main.pas:main',
+        callForm: 'member',
+        receiverTypeName: 'TWidget',
+        isBareExprDot: true,
+      },
+    ];
+
+    await processCallsFromExtracted(graph, calls, ctx);
+    const rels = graph.relationships.filter((r) => r.type === 'CALLS');
+    expect(rels).toHaveLength(1);
+    expect(rels[0].targetId).toBe(methodId);
+  });
+
+  it('falls back to normal resolution for Pascal bare exprDot when receiver type is unknown', async () => {
+    ctx.model.symbols.add('src/widget.pas', 'Update', 'Function:src/widget.pas:Update', 'Function');
+
+    const calls: ExtractedCall[] = [
+      {
+        filePath: 'src/main.pas',
+        calledName: 'Update',
+        sourceId: 'Function:src/main.pas:main',
+        callForm: 'member',
+        isBareExprDot: true,
+        // receiverTypeName omitted
+      },
+    ];
+
+    await processCallsFromExtracted(graph, calls, ctx);
+    // Without receiverTypeName the filter is skipped; global resolution finds Update
+    const rels = graph.relationships.filter((r) => r.type === 'CALLS');
+    expect(rels).toHaveLength(1);
+    expect(rels[0].targetId).toBe('Function:src/widget.pas:Update');
+  });
 });
 
 describe('processCalls — Phase P class lookup fallback', () => {
