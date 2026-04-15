@@ -52,6 +52,21 @@ function extractCalls(matches: any[]) {
   return calls;
 }
 
+function extractCallNodes(matches: any[]) {
+  const calls: { type: string; name?: string }[] = [];
+  for (const match of matches) {
+    const callCapture = match.captures.find((c: any) => c.name === 'call');
+    const nameCapture = match.captures.find((c: any) => c.name === 'call.name');
+    if (callCapture) {
+      calls.push({
+        type: callCapture.node.type,
+        name: nameCapture?.node.text,
+      });
+    }
+  }
+  return calls;
+}
+
 function extractImports(matches: any[]) {
   const imports: { source: string }[] = [];
   for (const match of matches) {
@@ -150,6 +165,15 @@ describe('Pascal/Delphi extraction', () => {
       const propDefs = defs.filter((d) => d.type === 'definition.property');
       expect(propDefs.length).toBeGreaterThan(0);
     });
+
+    it('should extract bare method calls without parentheses', () => {
+      const content = readFixture('04_class_basic.pas');
+      const provider = getProvider(SupportedLanguages.Pascal);
+      const { matches } = parseAndQuery(parser, content, provider.treeSitterQueries);
+      const calls = extractCallNodes(matches);
+
+      expect(calls.some((c) => c.name === 'Run')).toBe(true);
+    });
   });
 
   describe('Procedures and functions (06_procedures_functions.pas)', () => {
@@ -203,6 +227,18 @@ describe('Pascal/Delphi extraction', () => {
 
       const funcDefs = defs.filter((d) => d.type === 'definition.function');
       expect(funcDefs.length).toBeGreaterThan(0);
+    });
+
+    it('should extract inherited calls', () => {
+      const content = readFixture('13_database_operations.pas');
+      const provider = getProvider(SupportedLanguages.Pascal);
+      const { matches } = parseAndQuery(parser, content, provider.treeSitterQueries);
+      const calls = extractCallNodes(matches);
+
+      const inheritedCalls = calls.filter((c) => c.type === 'inherited');
+      expect(inheritedCalls.length).toBeGreaterThanOrEqual(2);
+      expect(inheritedCalls.some((c) => c.name === 'Create')).toBe(true);
+      expect(inheritedCalls.some((c) => !c.name)).toBe(true);
     });
   });
 });

@@ -119,6 +119,11 @@ export const inferCallForm = (callNode: SyntaxNode, nameNode: SyntaxNode): CallF
     return 'member';
   }
 
+  // 2c. Pascal/Delphi inherited call
+  if (callNode.type === 'inherited') {
+    return 'free';
+  }
+
   // 3. PHP: the callNode itself distinguishes member vs free calls
   if (
     callNode.type === 'member_call_expression' ||
