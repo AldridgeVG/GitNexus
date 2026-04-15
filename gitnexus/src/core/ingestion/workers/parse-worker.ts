@@ -1894,6 +1894,25 @@ const processFileGroup = (
               ...(argTypes !== undefined ? { argTypes } : {}),
             });
           }
+        } else if (language === SupportedLanguages.Pascal && callNode0.type === 'inherited') {
+          // Bare 'inherited;' in Pascal — infer the method name from the enclosing function
+          const sourceId =
+            findEnclosingFunctionId(callNode0, file.path, provider) ||
+            generateId('File', file.path);
+          const lastColon = sourceId.lastIndexOf(':');
+          const segment = lastColon >= 0 ? sourceId.slice(lastColon + 1) : '';
+          const dotIdx = segment.lastIndexOf('.');
+          let calledName = dotIdx >= 0 ? segment.slice(dotIdx + 1) : segment;
+          const hashIdx = calledName.indexOf('#');
+          if (hashIdx >= 0) calledName = calledName.slice(0, hashIdx);
+          if (calledName && !provider.isBuiltInName(calledName)) {
+            result.calls.push({
+              filePath: file.path,
+              calledName,
+              sourceId,
+              callForm: 'free',
+            });
+          }
         }
         continue;
       }

@@ -1307,6 +1307,27 @@ export const PASCAL_QUERIES = `
 ; Direct function/procedure calls
 (exprCall
   (identifier) @call.name) @call
+
+; Member method calls: Obj.Method()
+(exprCall
+  (exprDot
+    (identifier) @call.name)) @call
+
+; Inherited calls: inherited Create / inherited
+(inherited
+  (identifier) @call.name) @call
+
+(inherited) @call
+
+; Bare method calls without parentheses: Self.DoIt;
+(statement
+  (exprDot
+    (kDot)
+    (identifier) @call.name)) @call
+
+; Bare procedure calls without parentheses: Foo;
+(statement
+  (identifier) @call.name) @call
 `;
 
 import { SupportedLanguages } from 'gitnexus-shared';
