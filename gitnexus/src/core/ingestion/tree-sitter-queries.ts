@@ -1296,6 +1296,22 @@ export const PASCAL_QUERIES = `
 (declProc
   (identifier) @name) @definition.function
 
+; ===== Heritage =====
+
+; Class inheritance: TChild = class(TParent)
+(declType
+  name: (identifier) @heritage.class
+  (declClass
+    (typeref
+      (identifier) @heritage.extends))) @heritage
+
+; Interface inheritance: IChild = interface(IParent)
+(declType
+  name: (identifier) @heritage.class
+  (declIntf
+    (typeref
+      (identifier) @heritage.implements))) @heritage.impl
+
 ; ===== Imports =====
 
 ; Uses clause - declUses contains moduleName nodes

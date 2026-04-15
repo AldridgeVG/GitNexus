@@ -241,4 +241,33 @@ describe('Pascal/Delphi extraction', () => {
       expect(inheritedCalls.some((c) => !c.name)).toBe(true);
     });
   });
+
+  describe('Inheritance demo (14_inheritance_demo.pas)', () => {
+    it('should extract class definitions with inheritance', () => {
+      const content = readFixture('14_inheritance_demo.pas');
+      const provider = getProvider(SupportedLanguages.Pascal);
+      const { matches } = parseAndQuery(parser, content, provider.treeSitterQueries);
+      const defs = extractDefinitions(matches);
+
+      const classDefs = defs.filter((d) => d.type === 'definition.class');
+      expect(classDefs.length).toBe(2);
+      const names = classDefs.map((d) => d.name);
+      expect(names).toContain('TBaseDomain');
+      expect(names).toContain('TMatchInfoDomain');
+    });
+
+    it('should extract inherited calls including constructor and method', () => {
+      const content = readFixture('14_inheritance_demo.pas');
+      const provider = getProvider(SupportedLanguages.Pascal);
+      const { matches } = parseAndQuery(parser, content, provider.treeSitterQueries);
+      const calls = extractCallNodes(matches);
+
+      const inheritedCalls = calls.filter((c) => c.type === 'inherited');
+      expect(inheritedCalls.length).toBeGreaterThanOrEqual(4);
+      expect(inheritedCalls.some((c) => c.name === 'Create')).toBe(true);
+      expect(inheritedCalls.some((c) => c.name === 'LoadData')).toBe(true);
+      expect(inheritedCalls.some((c) => c.name === 'Validate')).toBe(true);
+      expect(inheritedCalls.some((c) => !c.name)).toBe(true);
+    });
+  });
 });

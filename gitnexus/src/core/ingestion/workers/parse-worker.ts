@@ -163,6 +163,8 @@ export interface ExtractedCall {
   argCount?: number;
   /** Discriminates free function calls from member/constructor calls */
   callForm?: 'free' | 'member' | 'constructor';
+  /** True for Pascal/Delphi inherited calls (e.g. inherited Create; / inherited;) */
+  isInherited?: boolean;
   /** Simple identifier of the receiver for member calls (e.g., 'user' in user.save()) */
   receiverName?: string;
   /** Resolved type name of the receiver (e.g., 'User' for user.save() when user: User) */
@@ -1839,6 +1841,7 @@ const processFileGroup = (
               findEnclosingFunctionId(callNode, file.path, provider) ||
               generateId('File', file.path);
             const callForm = inferCallForm(callNode, callNameNode);
+            const isInherited = callNode.type === 'inherited';
             let receiverName =
               callForm === 'member' ? extractReceiverName(callNameNode) : undefined;
             let receiverTypeName = receiverName
@@ -1883,6 +1886,7 @@ const processFileGroup = (
               sourceId,
               argCount: countCallArguments(callNode),
               ...(callForm !== undefined ? { callForm } : {}),
+              ...(isInherited ? { isInherited: true } : {}),
               ...(receiverName !== undefined ? { receiverName } : {}),
               ...(receiverTypeName !== undefined ? { receiverTypeName } : {}),
               ...(receiverMixedChain !== undefined ? { receiverMixedChain } : {}),
@@ -1906,6 +1910,7 @@ const processFileGroup = (
               calledName,
               sourceId,
               callForm: 'free',
+              isInherited: true,
             });
           }
         }

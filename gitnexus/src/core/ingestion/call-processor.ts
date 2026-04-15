@@ -1837,6 +1837,42 @@ const resolveCallTarget = (
   );
 };
 
+// ── Pascal/Delphi inherited call resolution ──────────────────────────────
+/**
+ * Resolve an `inherited` call by walking the parent chain of the enclosing
+ * class, skipping the class itself to avoid self-loops.
+ */
+const resolveInheritedCall = (
+  call: Pick<ExtractedCall, 'calledName' | 'argCount' | 'sourceId'>,
+  currentFile: string,
+  ctx: ResolutionContext,
+  heritageMap?: HeritageMap,
+): ResolveResult | null => {
+  if (!heritageMap) return null;
+
+  // Extract owner class name from sourceId, e.g. Constructor:path:TMatchInfoDomain.Create
+  const lastColon = call.sourceId.lastIndexOf(':');
+  const segment = lastColon >= 0 ? call.sourceId.slice(lastColon + 1) : '';
+  const dotIdx = segment.lastIndexOf('.');
+  const className = dotIdx >= 0 ? segment.slice(0, dotIdx) : '';
+  if (!className) return null;
+
+  const typeResolved = ctx.resolve(className, currentFile);
+  if (!typeResolved) return null;
+
+  for (const candidate of typeResolved.candidates) {
+    if (!CLASS_LIKE_TYPES.has(candidate.type)) continue;
+    const ancestors = heritageMap.getAncestors(candidate.nodeId);
+    for (const ancestorId of ancestors) {
+      const def = ctx.model.methods.lookupMethodByOwner(ancestorId, call.calledName, call.argCount);
+      if (def) {
+        return toResolveResult(def, typeResolved.tier);
+      }
+    }
+  }
+  return null;
+};
+
 // ── Scope key helpers ────────────────────────────────────────────────────
 // Scope keys use the format "funcName@startIndex" (produced by type-env.ts).
 // Source IDs use "Label:filepath:funcName" (produced by parse-worker.ts).
@@ -2650,15 +2686,20 @@ export const processCallsFromExtracted = async (
         }
       }
 
-      const resolved = resolveCallTarget(
-        effectiveCall,
-        effectiveCall.filePath,
-        ctx,
-        undefined,
-        widenCache,
-        effectiveCall.argTypes,
-        heritageMap,
-      );
+      let resolved = effectiveCall.isInherited
+        ? resolveInheritedCall(effectiveCall, effectiveCall.filePath, ctx, heritageMap)
+        : null;
+      if (!resolved) {
+        resolved = resolveCallTarget(
+          effectiveCall,
+          effectiveCall.filePath,
+          ctx,
+          undefined,
+          widenCache,
+          effectiveCall.argTypes,
+          heritageMap,
+        );
+      }
       if (!resolved) {
         // Vue template component fallback: match calledName against imported .vue basenames
         if (effectiveCall.filePath.endsWith('.vue') && effectiveCall.sourceId.startsWith('File:')) {
