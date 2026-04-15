@@ -35,7 +35,8 @@
     "hooks",
     "scripts",
     "skills",
-    "vendor/leiden"
+    "vendor/leiden",
+    "vendor/tree-sitter-proto"
   ],
   "scripts": {
     "build": "node scripts/build.js",
