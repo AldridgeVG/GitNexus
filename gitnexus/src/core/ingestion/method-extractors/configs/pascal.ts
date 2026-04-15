@@ -139,7 +139,17 @@ export const pascalMethodConfig: MethodExtractionConfig = {
     const header = node.childForFieldName('header');
     const nameNode = header?.childForFieldName('name') ?? node.childForFieldName('name');
     if (nameNode) {
-      return { funcName: nameNode.text, label: 'Function' };
+      let label: 'Function' | 'Constructor' = 'Function';
+      if (header) {
+        for (let i = 0; i < header.childCount; i++) {
+          const child = header.child(i);
+          if (child?.type === 'kConstructor' || child?.type === 'kDestructor') {
+            label = 'Constructor';
+            break;
+          }
+        }
+      }
+      return { funcName: nameNode.text, label };
     }
     return undefined;
   },
