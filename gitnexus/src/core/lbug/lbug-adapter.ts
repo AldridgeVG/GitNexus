@@ -381,67 +381,13 @@ export const loadGraphToLbug = async (
   }
 
   // Bulk COPY relationships — split by FROM→TO label pair (LadybugDB requires it)
-  const { relHeader, relsByPairMeta, pairWriteStreams, skippedRels, totalValidRels } =
-    await splitRelCsvByLabelPair(csvResult.relCsvPath, csvDir, validTables, getNodeLabel);
-
-  await new Promise<void>((resolve, reject) => {
-    const rl = createInterface({
-      input: createReadStream(csvResult.relCsvPath, 'utf-8'),
-      crlfDelay: Infinity,
-    });
-    const pendingDrain = new Set<import('fs').WriteStream>();
-    let isFirst = true;
-    rl.on('line', (line) => {
-      if (isFirst) {
-        relHeader = line;
-        isFirst = false;
-        return;
-      }
-      if (!line.trim()) return;
-      const match = line.match(/"([^"]*)","([^"]*)"/);
-      if (!match) {
-        skippedRels++;
-        return;
-      }
-      const fromLabel = getNodeLabel(match[1]);
-      const toLabel = getNodeLabel(match[2]);
-      if (!validTables.has(fromLabel) || !validTables.has(toLabel)) {
-        skippedRels++;
-        return;
-      }
-      const pairKey = `${fromLabel}|${toLabel}`;
-      let ws = pairWriteStreams.get(pairKey);
-      if (!ws) {
-        const pairCsvPath = path.join(csvDir, `rel_${fromLabel}_${toLabel}.csv`);
-        ws = createWriteStream(pairCsvPath, 'utf-8');
-        ws.write(relHeader + '\n');
-        pairWriteStreams.set(pairKey, ws);
-        relsByPairMeta.set(pairKey, { csvPath: pairCsvPath, rows: 0 });
-      }
-      const ok = ws.write(line + '\n');
-      relsByPairMeta.get(pairKey)!.rows++;
-      totalValidRels++;
-      // Handle backpressure: pause reading when the write buffer is full,
-      // resume when the stream drains. Prevents unbounded memory growth
-      // on repos with millions of relationships.
-      if (!ok) {
-        rl.pause();
-        if (!pendingDrain.has(ws)) {
-          pendingDrain.add(ws);
-          ws.once('drain', () => {
-            pendingDrain.delete(ws);
-            rl.resume();
-          });
-        }
-      }
-    });
-    rl.on('close', resolve);
-    rl.on('error', (err) => {
-      // Destroy all open write streams to avoid resource leaks
-      for (const ws of pairWriteStreams.values()) ws.destroy();
-      reject(err);
-    });
-  });
+  const splitResult = await splitRelCsvByLabelPair(
+    csvResult.relCsvPath,
+    csvDir,
+    validTables,
+    getNodeLabel,
+  );
+  const { relHeader, relsByPairMeta, pairWriteStreams, skippedRels, totalValidRels } = splitResult;
 
   // Close all per-pair write streams before COPY
   await Promise.all(
