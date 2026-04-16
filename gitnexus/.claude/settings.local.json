@@ -7,7 +7,11 @@
       "Bash(npm test:*)",
       "Bash(npx tsx:*)",
       "Bash(npx vitest:*)",
-      "Bash(find . -name *pascal-inherited* -o -name *pascal* -type d)"
+      "Bash(find . -name *pascal-inherited* -o -name *pascal* -type d)",
+      "Bash(npx tsc:*)",
+      "Bash(node:*)",
+      "Bash(npm run:*)",
+      "Bash(cd /d \"D:\\\\Develop\\\\ExtProjects\\\\GitNexus\\\\gitnexus\")"
     ]
   }
 }

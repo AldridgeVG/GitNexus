@@ -1432,6 +1432,29 @@ describe('processCallsFromExtracted', () => {
     expect(rels).toHaveLength(1);
     expect(rels[0].targetId).toBe('Function:src/widget.pas:Update');
   });
+
+  it('resolves Pascal implicit Self member call via owner-scoped method lookup', async () => {
+    const classId = 'Class:src/widget.pas:TWidget';
+    const methodId = 'Method:src/widget.pas:TWidget.DoWork';
+    ctx.model.symbols.add('src/widget.pas', 'TWidget', classId, 'Class');
+    ctx.model.symbols.add('src/widget.pas', 'DoWork', methodId, 'Method', { ownerId: classId });
+
+    const calls: ExtractedCall[] = [
+      {
+        filePath: 'src/widget.pas',
+        calledName: 'DoWork',
+        sourceId: 'Method:src/widget.pas:TWidget.Handle',
+        callForm: 'member',
+        receiverTypeName: 'TWidget',
+        receiverName: 'Self',
+      },
+    ];
+
+    await processCallsFromExtracted(graph, calls, ctx);
+    const rels = graph.relationships.filter((r) => r.type === 'CALLS');
+    expect(rels).toHaveLength(1);
+    expect(rels[0].targetId).toBe(methodId);
+  });
 });
 
 describe('processCalls — Phase P class lookup fallback', () => {
