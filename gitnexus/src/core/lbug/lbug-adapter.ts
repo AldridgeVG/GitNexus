@@ -1,6 +1,8 @@
 import fs from 'fs/promises';
 import { createReadStream, createWriteStream } from 'fs';
 import { createInterface } from 'readline';
+import { once } from 'events';
+import { finished } from 'stream/promises';
 import path from 'path';
 import lbug from '@ladybugdb/core';
 import { KnowledgeGraph } from '../graph/types.js';
@@ -9,15 +11,147 @@ import {
   REL_TABLE_NAME,
   SCHEMA_QUERIES,
   EMBEDDING_TABLE_NAME,
+  STALE_HASH_SENTINEL,
   NodeTableName,
 } from './schema.js';
 import { streamAllCSVsToDisk } from './csv-generator.js';
+
+// ---------------------------------------------------------------------------
+// Relationship CSV splitting — extracted for testability (PR #818)
+// ---------------------------------------------------------------------------
+
+/** Factory for creating WriteStreams — injectable for testing. */
+export type WriteStreamFactory = (filePath: string) => import('fs').WriteStream;
+
+/** Result of splitting the relationship CSV into per-label-pair files. */
+export interface RelCsvSplitResult {
+  relHeader: string;
+  relsByPairMeta: Map<string, { csvPath: string; rows: number }>;
+  pairWriteStreams: Map<string, import('fs').WriteStream>;
+  skippedRels: number;
+  totalValidRels: number;
+}
+
+/**
+ * Split a relationship CSV into per-label-pair files on disk.
+ *
+ * Streams the CSV line-by-line, routing each relationship to a file named
+ * `rel_{fromLabel}_{toLabel}.csv`. Handles backpressure correctly: only one
+ * drain listener per stream at a time, and readline resumes only when ALL
+ * backpressured streams have drained.
+ *
+ * @param csvPath       Path to the combined relationship CSV
+ * @param csvDir        Directory to write per-pair CSV files
+ * @param validTables   Set of valid node table names
+ * @param getNodeLabel  Function to extract the label from a node ID
+ * @param wsFactory     Optional WriteStream factory (defaults to fs.createWriteStream)
+ */
+export const splitRelCsvByLabelPair = async (
+  csvPath: string,
+  csvDir: string,
+  validTables: Set<string>,
+  getNodeLabel: (id: string) => string,
+  wsFactory: WriteStreamFactory = (p) => createWriteStream(p, 'utf-8'),
+): Promise<RelCsvSplitResult> => {
+  let relHeader = '';
+  const relsByPairMeta = new Map<string, { csvPath: string; rows: number }>();
+  const pairWriteStreams = new Map<string, import('fs').WriteStream>();
+  let skippedRels = 0;
+  let totalValidRels = 0;
+
+  const inputStream = createReadStream(csvPath, 'utf-8');
+  const rl = createInterface({ input: inputStream, crlfDelay: Infinity });
+
+  // If any pair WriteStream errors (disk full, EMFILE, etc.) or the input
+  // stream fails, we need to abort the pending `once(ws, 'drain')` await.
+  // An AbortController gives us one signal to cancel all pending waits
+  // without a custom state machine.
+  const abortOnError = new AbortController();
+  let streamError: Error | null = null;
+  const markStreamError = (err: Error): void => {
+    streamError ??= err;
+    abortOnError.abort(err);
+  };
+
+  try {
+    // `for await (const line of rl)` replaces the old manual
+    // on('line')/pause()/resume()/waitingForDrain state machine: readline's
+    // async iterator naturally serializes line delivery with our awaits, so
+    // at most one ws can be in backpressure at a time and we just await its
+    // 'drain' event.
+    let isFirst = true;
+    for await (const line of rl) {
+      if (streamError) throw streamError;
+      if (isFirst) {
+        relHeader = line;
+        isFirst = false;
+        continue;
+      }
+      if (!line.trim()) continue;
+      const match = line.match(/"([^"]*)","([^"]*)"/);
+      if (!match) {
+        skippedRels++;
+        continue;
+      }
+      const fromLabel = getNodeLabel(match[1]);
+      const toLabel = getNodeLabel(match[2]);
+      if (!validTables.has(fromLabel) || !validTables.has(toLabel)) {
+        skippedRels++;
+        continue;
+      }
+
+      const pairKey = `${fromLabel}|${toLabel}`;
+      let ws = pairWriteStreams.get(pairKey);
+      if (!ws) {
+        const pairCsvPath = path.join(csvDir, `rel_${fromLabel}_${toLabel}.csv`);
+        ws = wsFactory(pairCsvPath);
+        ws.on('error', markStreamError);
+        pairWriteStreams.set(pairKey, ws);
+        relsByPairMeta.set(pairKey, { csvPath: pairCsvPath, rows: 0 });
+        if (!ws.write(relHeader + '\n')) {
+          await once(ws, 'drain', { signal: abortOnError.signal });
+        }
+      }
+
+      if (!ws.write(line + '\n')) {
+        await once(ws, 'drain', { signal: abortOnError.signal });
+      }
+      relsByPairMeta.get(pairKey)!.rows++;
+      totalValidRels++;
+    }
+    if (streamError) throw streamError;
+  } catch (err) {
+    // Tear down everything so no fd is left dangling. If the abort was caused
+    // by a stream error, rethrow that error (more actionable than AbortError).
+    for (const ws of pairWriteStreams.values()) ws.destroy();
+    inputStream.destroy();
+    throw streamError ?? err;
+  } finally {
+    // Readline 'close' fires before the underlying fs.ReadStream releases its
+    // fd — on Windows that race caused ENOTEMPTY on the parent dir.
+    // stream/promises.finished is the stdlib "wait until this stream is fully
+    // closed" primitive and handles both success and error paths.
+    await finished(inputStream).catch(() => {});
+  }
+
+  return { relHeader, relsByPairMeta, pairWriteStreams, skippedRels, totalValidRels };
+};
 
 let db: lbug.Database | null = null;
 let conn: lbug.Connection | null = null;
 let currentDbPath: string | null = null;
 let ftsLoaded = false;
 let vectorExtensionLoaded = false;
+
+/**
+ * Check if an error indicates a missing column or table (schema-level problem)
+ * rather than a transient/connection error. Used for legacy DB fallback logic.
+ */
+const isMissingColumnOrTableError = (msg: string): boolean =>
+  msg.includes('does not exist') ||
+  // Kuzu-specific: "(table|column|property) ... not found" — narrow enough to avoid
+  // matching transient errors like "connection not found" or "key not found".
+  /(table|column|property).*not found/i.test(msg);
 
 /** Expose the current Database for pool adapter reuse in tests. */
 export const getDatabase = (): lbug.Database | null => db;
@@ -247,14 +381,8 @@ export const loadGraphToLbug = async (
   }
 
   // Bulk COPY relationships — split by FROM→TO label pair (LadybugDB requires it)
-  // Stream-read the relation CSV line by line and write directly to per-pair
-  // temp files on disk. This avoids accumulating potentially millions of CSV
-  // lines in memory which could exceed V8 Map or array limits on large repos.
-  let relHeader = '';
-  const relsByPairMeta = new Map<string, { csvPath: string; rows: number }>();
-  const pairWriteStreams = new Map<string, import('fs').WriteStream>();
-  let skippedRels = 0;
-  let totalValidRels = 0;
+  const { relHeader, relsByPairMeta, pairWriteStreams, skippedRels, totalValidRels } =
+    await splitRelCsvByLabelPair(csvResult.relCsvPath, csvDir, validTables, getNodeLabel);
 
   await new Promise<void>((resolve, reject) => {
     const rl = createInterface({
@@ -317,12 +445,10 @@ export const loadGraphToLbug = async (
 
   // Close all per-pair write streams before COPY
   await Promise.all(
-    Array.from(pairWriteStreams.values()).map(
-      (ws) =>
-        new Promise<void>((resolve, reject) =>
-          ws.end((err: Error | undefined) => (err ? reject(err) : resolve())),
-        ),
-    ),
+    Array.from(pairWriteStreams.values()).map(async (ws) => {
+      ws.end();
+      await finished(ws);
+    }),
   );
 
   const insertedRels = totalValidRels;
@@ -815,18 +941,35 @@ export const getLbugStats = async (): Promise<{ nodes: number; edges: number }> 
  */
 export const loadCachedEmbeddings = async (): Promise<{
   embeddingNodeIds: Set<string>;
-  embeddings: Array<{ nodeId: string; embedding: number[] }>;
+  embeddings: Array<{ nodeId: string; embedding: number[]; contentHash?: string }>;
 }> => {
   if (!conn) {
     return { embeddingNodeIds: new Set(), embeddings: [] };
   }
 
   const embeddingNodeIds = new Set<string>();
-  const embeddings: Array<{ nodeId: string; embedding: number[] }> = [];
+  const embeddings: Array<{ nodeId: string; embedding: number[]; contentHash?: string }> = [];
   try {
-    const rows = await conn.query(
-      `MATCH (e:${EMBEDDING_TABLE_NAME}) RETURN e.nodeId AS nodeId, e.embedding AS embedding`,
-    );
+    // Try to read contentHash alongside the embedding
+    let rows: any;
+    let hasContentHash = true;
+    try {
+      rows = await conn.query(
+        `MATCH (e:${EMBEDDING_TABLE_NAME}) RETURN e.nodeId AS nodeId, e.embedding AS embedding, e.contentHash AS contentHash`,
+      );
+    } catch (err: any) {
+      // Only fall back for missing-column errors (legacy DBs without contentHash).
+      // Rethrow transient / connection errors so callers see them.
+      const msg = err?.message ?? '';
+      if (isMissingColumnOrTableError(msg)) {
+        hasContentHash = false;
+        rows = await conn.query(
+          `MATCH (e:${EMBEDDING_TABLE_NAME}) RETURN e.nodeId AS nodeId, e.embedding AS embedding`,
+        );
+      } else {
+        throw err;
+      }
+    }
     const result = Array.isArray(rows) ? rows[0] : rows;
     for (const row of await result.getAll()) {
       const nodeId = String(row.nodeId ?? row[0] ?? '');
@@ -839,6 +982,7 @@ export const loadCachedEmbeddings = async (): Promise<{
           embedding: Array.isArray(embedding)
             ? embedding.map(Number)
             : Array.from(embedding as any).map(Number),
+          contentHash: hasContentHash ? (row.contentHash ?? row[2] ?? undefined) : undefined,
         });
       }
     }
@@ -847,6 +991,63 @@ export const loadCachedEmbeddings = async (): Promise<{
   }
 
   return { embeddingNodeIds, embeddings };
+};
+
+/**
+ * Fetch existing embedding hashes from CodeEmbedding table for incremental embedding.
+ * Returns a Map<nodeId, contentHash> suitable for passing to `runEmbeddingPipeline`.
+ * Handles legacy DBs without the `contentHash` column (all rows treated as stale with empty hash).
+ * Returns undefined if the CodeEmbedding table does not exist.
+ *
+ * @param execQuery - Cypher query executor (typically pool-adapter's `executeQuery`)
+ */
+export const fetchExistingEmbeddingHashes = async (
+  execQuery: (cypher: string) => Promise<any[]>,
+): Promise<Map<string, string> | undefined> => {
+  try {
+    const rows = await execQuery(
+      `MATCH (e:${EMBEDDING_TABLE_NAME}) RETURN e.nodeId AS nodeId, e.contentHash AS contentHash`,
+    );
+    if (!rows || rows.length === 0) return undefined;
+    const map = new Map<string, string>();
+    for (const r of rows) {
+      const nodeId = r.nodeId ?? r[0];
+      const hash = r.contentHash ?? r[1] ?? STALE_HASH_SENTINEL;
+      if (nodeId) {
+        // Empty/null contentHash means legacy row — treat as stale so it gets re-embedded
+        map.set(nodeId, hash || STALE_HASH_SENTINEL);
+      }
+    }
+    return map;
+  } catch (err: any) {
+    const msg = err?.message ?? '';
+    if (isMissingColumnOrTableError(msg)) {
+      // Column or table missing — try fallback without contentHash
+      try {
+        const rows = await execQuery(`MATCH (e:${EMBEDDING_TABLE_NAME}) RETURN e.nodeId AS nodeId`);
+        if (!rows || rows.length === 0) return undefined;
+        const map = new Map<string, string>();
+        for (const r of rows) {
+          const nodeId = r.nodeId ?? r[0];
+          if (nodeId) map.set(nodeId, STALE_HASH_SENTINEL); // no contentHash — treat as stale
+        }
+        console.log(
+          `[embed] ${map.size} nodes in legacy DB (no contentHash) — all treated as stale`,
+        );
+        return map;
+      } catch (fallbackErr: any) {
+        const fallbackMsg = fallbackErr?.message ?? '';
+        if (isMissingColumnOrTableError(fallbackMsg)) {
+          console.log(
+            `[embed] CodeEmbedding table not yet present — full embedding run (${fallbackMsg})`,
+          );
+          return undefined;
+        }
+        throw fallbackErr;
+      }
+    }
+    throw err;
+  }
 };
 
 export const closeLbug = async (): Promise<void> => {

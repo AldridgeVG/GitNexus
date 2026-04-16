@@ -1451,25 +1451,40 @@ export const createServer = async (port: number, host: string = '127.0.0.1') => 
           await withLbugDb(lbugPath, async () => {
             const { runEmbeddingPipeline } =
               await import('../core/embeddings/embedding-pipeline.js');
-            await runEmbeddingPipeline(executeQuery, executeWithReusedStatement, (p) => {
-              embedJobManager.updateJob(job.id, {
-                progress: {
-                  phase:
-                    p.phase === 'ready' ? 'complete' : p.phase === 'error' ? 'failed' : p.phase,
-                  percent: p.percent,
-                  message:
-                    p.phase === 'loading-model'
-                      ? 'Loading embedding model...'
-                      : p.phase === 'embedding'
-                        ? `Embedding nodes (${p.percent}%)...`
-                        : p.phase === 'indexing'
-                          ? 'Creating vector index...'
-                          : p.phase === 'ready'
-                            ? 'Embeddings complete'
-                            : `${p.phase} (${p.percent}%)`,
-                },
-              });
-            });
+            // Fetch existing content hashes for incremental embedding.
+            // Delegated to lbug-adapter which owns the DB query logic and legacy-fallback handling.
+            const { fetchExistingEmbeddingHashes } = await import('../core/lbug/lbug-adapter.js');
+            const existingEmbeddings = await fetchExistingEmbeddingHashes(executeQuery);
+            if (existingEmbeddings && existingEmbeddings.size > 0) {
+              console.log(
+                `[embed] ${existingEmbeddings.size} nodes already embedded — incremental run with content-hash comparison`,
+              );
+            }
+            await runEmbeddingPipeline(
+              executeQuery,
+              executeWithReusedStatement,
+              (p) => {
+                embedJobManager.updateJob(job.id, {
+                  progress: {
+                    phase:
+                      p.phase === 'ready' ? 'complete' : p.phase === 'error' ? 'failed' : p.phase,
+                    percent: p.percent,
+                    message:
+                      p.phase === 'loading-model'
+                        ? 'Loading embedding model...'
+                        : p.phase === 'embedding'
+                          ? `Embedding nodes (${p.percent}%)...`
+                          : p.phase === 'indexing'
+                            ? 'Creating vector index...'
+                            : p.phase === 'ready'
+                              ? 'Embeddings complete'
+                              : `${p.phase} (${p.percent}%)`,
+                  },
+                });
+              },
+              {}, // config: use defaults
+              existingEmbeddings,
+            );
           });
 
           clearTimeout(embedTimeout);
