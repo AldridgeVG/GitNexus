@@ -1898,6 +1898,19 @@ const extractFuncNameFromSourceId = (sourceId: string): string => {
   return hashIdx >= 0 ? raw.slice(0, hashIdx) : raw;
 };
 
+/** Extract the enclosing class name from a qualified sourceId.
+ *  Returns undefined for unqualified IDs (e.g. "Function:filepath:funcName").
+ *  Example: "Method:filepath:TAppStatusEventHandler.HandleAppSysEvent#1" → "TAppStatusEventHandler" */
+const extractClassNameFromSourceId = (sourceId: string): string | undefined => {
+  const lastColon = sourceId.lastIndexOf(':');
+  const segment = lastColon >= 0 ? sourceId.slice(lastColon + 1) : '';
+  const dotIdx = segment.lastIndexOf('.');
+  if (dotIdx < 0) return undefined;
+  const raw = segment.slice(0, dotIdx);
+  const hashIdx = raw.indexOf('#');
+  return hashIdx >= 0 ? raw.slice(0, hashIdx) : raw;
+};
+
 /**
  * Build a composite key for receiver type storage.
  * Uses the full scope string (e.g. "save@100") to distinguish overloaded
@@ -2686,6 +2699,27 @@ export const processCallsFromExtracted = async (
         }
       }
 
+      // Pascal/Delphi symbol-table filter: bare exprDot without parentheses
+      // may be a property access rather than a procedure call. When the receiver
+      // type is known and the name resolves to a field/property in the symbol
+      // table, skip emitting a CALLS edge.
+      if (effectiveCall.isBareExprDot && effectiveCall.receiverTypeName) {
+        const typeResolved = ctx.resolve(effectiveCall.receiverTypeName, effectiveCall.filePath);
+        if (typeResolved) {
+          let isPropertyAccess = false;
+          for (const candidate of typeResolved.candidates) {
+            if (
+              CLASS_LIKE_TYPES.has(candidate.type) &&
+              ctx.model.fields.lookupFieldByOwner(candidate.nodeId, effectiveCall.calledName)
+            ) {
+              isPropertyAccess = true;
+              break;
+            }
+          }
+          if (isPropertyAccess) continue;
+        }
+      }
+
       let resolved = effectiveCall.isInherited
         ? resolveInheritedCall(effectiveCall, effectiveCall.filePath, ctx, heritageMap)
         : null;
@@ -2699,6 +2733,29 @@ export const processCallsFromExtracted = async (
           effectiveCall.argTypes,
           heritageMap,
         );
+      }
+      if (!resolved) {
+        // Pascal/Delphi fallback: bare identifiers in class methods are free
+        // functions first; if missed, retry as Self.member call.
+        const language = getLanguageFromFilename(effectiveCall.filePath);
+        if (
+          language === SupportedLanguages.Pascal &&
+          effectiveCall.callForm === 'free' &&
+          !effectiveCall.isInherited
+        ) {
+          const className = extractClassNameFromSourceId(effectiveCall.sourceId);
+          if (className) {
+            resolved = resolveCallTarget(
+              { ...effectiveCall, callForm: 'member', receiverTypeName: className },
+              effectiveCall.filePath,
+              ctx,
+              undefined,
+              widenCache,
+              effectiveCall.argTypes,
+              heritageMap,
+            );
+          }
+        }
       }
       if (!resolved) {
         // Vue template component fallback: match calledName against imported .vue basenames

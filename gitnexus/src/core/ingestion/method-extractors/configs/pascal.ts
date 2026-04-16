@@ -86,7 +86,11 @@ export const pascalMethodConfig: MethodExtractionConfig = {
     // defProc > header:(declProc) > name:(identifier)
     const header = node.childForFieldName('header');
     const nameNode = header?.childForFieldName('name') ?? node.childForFieldName('name');
-    return nameNode?.text;
+    if (!nameNode) return undefined;
+    // tree-sitter-pascal's declProc name field may include the class prefix
+    // (e.g. "TClass.Method"). Strip it so names match query-capture IDs.
+    const raw = nameNode.text;
+    return raw.includes('.') ? raw.slice(raw.lastIndexOf('.') + 1) : raw;
   },
 
   extractReturnType(node) {
@@ -149,7 +153,10 @@ export const pascalMethodConfig: MethodExtractionConfig = {
           }
         }
       }
-      return { funcName: nameNode.text, label };
+      // Align with extractName: strip class prefix so IDs match definition phase.
+      const raw = nameNode.text;
+      const funcName = raw.includes('.') ? raw.slice(raw.lastIndexOf('.') + 1) : raw;
+      return { funcName, label };
     }
     return undefined;
   },
