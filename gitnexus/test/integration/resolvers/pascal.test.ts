@@ -61,6 +61,8 @@ describe('Pascal inherited resolution', () => {
       'ALL CALLS:',
       calls.map((c) => `${c.sourceLabel}:${c.source} -> ${c.targetLabel}:${c.target}`),
     );
+    // @ts-expect-error debug
+    console.log('RAW CALLS:', result.calls);
     const inheritedCall = calls.find(
       (c) => c.source === 'TChild.Create' && c.target === 'TParent.Create',
     );

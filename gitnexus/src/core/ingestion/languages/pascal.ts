@@ -12,13 +12,13 @@ import { pascalMethodConfig } from '../method-extractors/configs/pascal.js';
 import type { SyntaxNode } from '../utils/ast-helpers.js';
 
 function isPascalConstructorNode(node: SyntaxNode): boolean {
-  const header = node.childForFieldName('header');
-  if (header) {
-    for (let i = 0; i < header.childCount; i++) {
-      const child = header.child(i);
-      if (child?.type === 'kConstructor' || child?.type === 'kDestructor') {
-        return true;
-      }
+  // defProc has a 'header' field pointing to declProc, but interface declProc nodes
+  // ARE the header themselves, so fall back to checking the node directly.
+  const header = node.childForFieldName('header') ?? node;
+  for (let i = 0; i < header.childCount; i++) {
+    const child = header.child(i);
+    if (child?.type === 'kConstructor' || child?.type === 'kDestructor') {
+      return true;
     }
   }
   return false;

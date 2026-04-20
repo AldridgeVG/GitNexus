@@ -240,6 +240,25 @@ export const findEnclosingClassInfo = (
   filePath: string,
   resolveEnclosingOwner?: (node: SyntaxNode) => SyntaxNode | null,
 ): EnclosingClassInfo | null => {
+  // Pascal: implementation defProc nodes are outside declClass; try to extract
+  // the class name from the qualified method name in the header (e.g. TParent.Create).
+  // This must be checked on the input node itself before walking up to parents.
+  if (node.type === 'defProc') {
+    const header = node.childForFieldName?.('header');
+    const nameNode = header?.childForFieldName?.('name');
+    if (nameNode?.type === 'genericDot') {
+      const raw = nameNode.text;
+      const dotIdx = raw.indexOf('.');
+      if (dotIdx > 0) {
+        const className = raw.slice(0, dotIdx);
+        return {
+          classId: generateId('Class', `${filePath}:${className}`),
+          className,
+        };
+      }
+    }
+  }
+
   let current = node.parent;
   let iterations = 0;
   // Tracks container nodes already visited via the hook so a misbehaving hook
@@ -310,6 +329,26 @@ export const findEnclosingClassInfo = (
           // Provider remapped to a different node — re-evaluate from there.
           current = resolved;
           continue;
+        }
+      }
+
+      // Pascal: declClass/declIntf/declHelper have no name field themselves;
+      // the type name lives in the parent declType's identifier child.
+      if (
+        current.type === 'declClass' ||
+        current.type === 'declIntf' ||
+        current.type === 'declHelper'
+      ) {
+        const parent = current.parent;
+        if (parent?.type === 'declType') {
+          const nameNode = parent.childForFieldName?.('name');
+          if (nameNode) {
+            const label = CONTAINER_TYPE_TO_LABEL[current.type] || 'Class';
+            return {
+              classId: generateId(label, `${filePath}:${nameNode.text}`),
+              className: nameNode.text,
+            };
+          }
         }
       }
 

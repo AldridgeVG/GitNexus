@@ -1290,11 +1290,11 @@ export const PASCAL_QUERIES = `
 ; Procedures and functions
 (defProc
   header: (declProc
-    (identifier) @name)) @definition.function
+    [(identifier) (genericDot)] @name)) @definition.function
 
 ; Procedure declarations (forward declarations in interface section)
 (declProc
-  (identifier) @name) @definition.function
+  [(identifier) (genericDot)] @name) @definition.function
 
 ; ===== Heritage =====
 
