@@ -381,6 +381,7 @@ const FIELD_ACCESS_NODE_TYPES = new Set([
   'attribute', // Python
   'navigation_expression', // Kotlin/Swift
   'member_binding_expression', // C# null-conditional (user?.Address)
+  'exprDot', // Pascal/Delphi: Obj.Field or nested chains
 ]);
 
 /** One step in a mixed receiver chain. */
@@ -582,6 +583,12 @@ export function extractMixedChain(
       } else if (current.type === 'attribute') {
         innerObject = current.childForFieldName?.('object') ?? null;
         propertyName = current.childForFieldName?.('attribute')?.text;
+      } else if (current.type === 'exprDot') {
+        // Pascal/Delphi: exprDot children are [left_expr, kDot, right_identifier]
+        // with no named fields. The property is the last named child, and the
+        // object is the first named child (which may itself be a nested exprDot).
+        innerObject = current.firstNamedChild ?? null;
+        propertyName = current.lastNamedChild?.text;
       } else {
         innerObject =
           current.childForFieldName?.('object') ??
