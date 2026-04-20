@@ -6,21 +6,23 @@
  * New code should use the VCSAdapter.checkStaleness() method directly.
  */
 
-import { createVCSAdapter } from '../storage/vcs-factory.js';
+import { createVCSAdapter, getVCSRoot } from '../storage/vcs-factory.js';
 import type { StalenessInfo } from '../storage/vcs.js';
 export type { StalenessInfo };
 
 /**
  * Check how many commits/revisions the index is behind HEAD.
  *
- * @param repoPath - Path to the repository
+ * @param repoPath - Path to the repository (or any path inside it)
  * @param lastRevision - The last indexed revision (commit hash for Git, rev number for SVN)
  * @returns Staleness information
  *
  * @deprecated Prefer using VCSAdapter.checkStaleness() for new code
  */
 export function checkStaleness(repoPath: string, lastRevision: string): StalenessInfo {
-  const adapter = createVCSAdapter(repoPath);
+  // Resolve the actual VCS root first — repoPath may be a subdirectory
+  const root = getVCSRoot(repoPath);
+  const adapter = root ? createVCSAdapter(root.root) : null;
 
   if (!adapter) {
     // No VCS detected, can't determine staleness

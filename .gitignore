@@ -23,6 +23,7 @@ Thumbs.db
 .env
 .env.local
 .env.*.local
+docker/.env
 
 # Logs
 *.log
@@ -101,3 +102,4 @@ gitnexus/vendor/**/node_modules/
 .swarm/
 
 local_docs/
+
