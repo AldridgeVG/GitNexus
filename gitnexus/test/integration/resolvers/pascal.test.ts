@@ -48,9 +48,9 @@ describe('Pascal inherited resolution', () => {
   });
 
   it('emits CALLS edge from TChild.Create to TParent.Create via inherited', () => {
-    const allNodes: { label: string; name: string }[] = [];
+    const allNodes: { label: string; name: string; id: string }[] = [];
     result.graph.forEachNode((n) => {
-      allNodes.push({ label: n.label, name: n.properties.name ?? n.id });
+      allNodes.push({ label: n.label, name: n.properties.name ?? n.id, id: n.id });
     });
     console.log(
       'ALL NODES:',

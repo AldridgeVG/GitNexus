@@ -34,21 +34,22 @@ function findPascalVisibility(node: SyntaxNode): MethodVisibility {
 function extractPascalParameters(node: SyntaxNode): ParameterInfo[] {
   const params: ParameterInfo[] = [];
 
-  // Find parameter_list in procedure_heading or function_heading
-  const heading = node.childForFieldName('heading');
-  const paramList =
-    heading?.childForFieldName('parameters') ?? node.childForFieldName('parameters');
+  // tree-sitter-pascal: defProc > header:(declProc) > declArgs
+  const header = node.childForFieldName('header');
+  if (!header) return params;
 
-  if (!paramList) return params;
+  const declArgs = header.children.find((c) => c.type === 'declArgs');
+  if (!declArgs) return params;
 
-  for (let i = 0; i < paramList.namedChildCount; i++) {
-    const param = paramList.namedChild(i);
-    if (!param || param.type !== 'parameter_declaration') continue;
+  for (let i = 0; i < declArgs.namedChildCount; i++) {
+    const param = declArgs.namedChild(i);
+    if (!param || param.type !== 'declArg') continue;
 
-    const nameNode = param.childForFieldName('name');
-    const typeNode = param.childForFieldName('type');
+    // declArg children: identifier, ':', type
+    const nameNode = param.child(0);
+    const typeNode = param.child(2);
 
-    if (nameNode) {
+    if (nameNode && nameNode.type === 'identifier') {
       params.push({
         name: nameNode.text,
         type: typeNode ? (extractSimpleTypeName(typeNode) ?? typeNode.text?.trim()) : null,
@@ -62,12 +63,20 @@ function extractPascalParameters(node: SyntaxNode): ParameterInfo[] {
 }
 
 function extractPascalReturnType(node: SyntaxNode): string | undefined {
-  // function_heading > return_type:(type_identifier)
-  const heading = node.childForFieldName('heading');
-  const returnTypeNode =
-    heading?.childForFieldName('return_type') ?? node.childForFieldName('return_type');
-  if (returnTypeNode) {
-    return extractSimpleTypeName(returnTypeNode) ?? returnTypeNode.text?.trim();
+  // tree-sitter-pascal: defProc > header:(declProc) — return type sits after ':' token
+  const header = node.childForFieldName('header');
+  if (!header) return undefined;
+
+  let foundColon = false;
+  for (let i = 0; i < header.childCount; i++) {
+    const child = header.child(i);
+    if (child?.type === ':') {
+      foundColon = true;
+      continue;
+    }
+    if (foundColon && child && child.isNamed) {
+      return extractSimpleTypeName(child) ?? child.text?.trim();
+    }
   }
   return undefined;
 }

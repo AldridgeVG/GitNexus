@@ -1483,6 +1483,8 @@ export const createServer = async (port: number, host: string = '127.0.0.1') => 
                 });
               },
               {}, // config: use defaults
+              undefined, // skipNodeIds
+              undefined, // context
               existingEmbeddings,
             );
           });

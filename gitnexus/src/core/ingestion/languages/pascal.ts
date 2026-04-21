@@ -9,6 +9,8 @@ import { createFieldExtractor } from '../field-extractors/generic.js';
 import { pascalConfig } from '../field-extractors/configs/pascal.js';
 import { createMethodExtractor } from '../method-extractors/generic.js';
 import { pascalMethodConfig } from '../method-extractors/configs/pascal.js';
+import { createCallExtractor } from '../call-extractors/generic.js';
+import { createHeritageExtractor } from '../heritage-extractors/generic.js';
 import type { SyntaxNode } from '../utils/ast-helpers.js';
 
 function isPascalConstructorNode(node: SyntaxNode): boolean {
@@ -17,6 +19,14 @@ function isPascalConstructorNode(node: SyntaxNode): boolean {
   const header = node.childForFieldName('header') ?? node;
   for (let i = 0; i < header.childCount; i++) {
     const child = header.child(i);
+    if (child?.type === 'kConstructor' || child?.type === 'kDestructor') {
+      return true;
+    }
+  }
+  // declProc nodes (captured by @definition.function in the interface section)
+  // do not have a header field; the keyword is a direct child.
+  for (let i = 0; i < node.childCount; i++) {
+    const child = node.child(i);
     if (child?.type === 'kConstructor' || child?.type === 'kDestructor') {
       return true;
     }
@@ -38,6 +48,8 @@ export const pascalProvider = defineLanguage({
 
   fieldExtractor: createFieldExtractor(pascalConfig),
   methodExtractor: createMethodExtractor(pascalMethodConfig),
+  callExtractor: createCallExtractor({ language: SupportedLanguages.Pascal }),
+  heritageExtractor: createHeritageExtractor(SupportedLanguages.Pascal),
 
   labelOverride(node, defaultLabel): NodeLabel | null {
     if (defaultLabel === 'Function' && isPascalConstructorNode(node)) {

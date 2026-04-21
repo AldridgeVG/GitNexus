@@ -24,6 +24,7 @@ export const DEFINITION_CAPTURE_KEYS = [
   'definition.type',
   'definition.const',
   'definition.static',
+  'definition.variable',
   'definition.typedef',
   'definition.macro',
   'definition.union',
@@ -157,7 +158,14 @@ export const CONTAINER_TYPE_TO_LABEL: Record<string, string> = {
   mixin_declaration: 'Mixin',
   extension_declaration: 'Extension',
   class: 'Class',
-  module: 'Module',
+  // Ruby `module` declarations map to `Trait` so they participate in the
+  // class-like type registry used by `lookupClassByName` / `buildHeritageMap`.
+  // This lets `include` / `extend` / `prepend` mixin heritage resolve to
+  // the providing module. Safe for non-Ruby languages: the only supported
+  // grammar that uses the bare `module` AST node type as a container is
+  // Ruby (Rust uses `mod_item`). Any new language adding a `module` node
+  // type must explicitly reclassify here.
+  module: 'Trait',
   singleton_class: 'Class', // Ruby: class << self inherits enclosing class name
   object_declaration: 'Class',
   companion_object: 'Class',
@@ -193,12 +201,23 @@ export function getLabelFromCaptures(
   if (captureMap['definition.struct']) return 'Struct';
   if (captureMap['definition.enum']) return 'Enum';
   if (captureMap['definition.namespace']) return 'Namespace';
-  if (captureMap['definition.module']) return 'Module';
+  if (captureMap['definition.module']) {
+    // Let providers reclassify module captures (e.g. Ruby remaps `Module`→`Trait`
+    // so mixin heritage resolves through `lookupClassByName`). Returning null
+    // from labelOverride means "skip this symbol"; treat it as a no-op here so
+    // we keep the default label rather than dropping a real definition.
+    if (provider.labelOverride) {
+      const override = provider.labelOverride(captureMap['definition.module'], 'Module');
+      if (override && override !== 'Module') return override;
+    }
+    return 'Module';
+  }
   if (captureMap['definition.trait']) return 'Trait';
   if (captureMap['definition.impl']) return 'Impl';
   if (captureMap['definition.type']) return 'TypeAlias';
   if (captureMap['definition.const']) return 'Const';
   if (captureMap['definition.static']) return 'Static';
+  if (captureMap['definition.variable']) return 'Variable';
   if (captureMap['definition.typedef']) return 'Typedef';
   if (captureMap['definition.macro']) return 'Macro';
   if (captureMap['definition.union']) return 'Union';
@@ -240,21 +259,39 @@ export const findEnclosingClassInfo = (
   filePath: string,
   resolveEnclosingOwner?: (node: SyntaxNode) => SyntaxNode | null,
 ): EnclosingClassInfo | null => {
-  // Pascal: implementation defProc nodes are outside declClass; try to extract
-  // the class name from the qualified method name in the header (e.g. TParent.Create).
-  // This must be checked on the input node itself before walking up to parents.
+  // Pascal/Delphi: defProc nodes in the implementation section are not
+  // inside the class AST. Extract the class name from the qualified method
+  // name in the header's genericDot (e.g. "TParent.Create").
   if (node.type === 'defProc') {
-    const header = node.childForFieldName?.('header');
-    const nameNode = header?.childForFieldName?.('name');
+    const header = node.childForFieldName('header');
+    const nameNode = header?.childForFieldName('name');
     if (nameNode?.type === 'genericDot') {
-      const raw = nameNode.text;
-      const dotIdx = raw.indexOf('.');
+      const dotIdx = nameNode.text.indexOf('.');
       if (dotIdx > 0) {
-        const className = raw.slice(0, dotIdx);
+        const className = nameNode.text.slice(0, dotIdx);
         return {
           classId: generateId('Class', `${filePath}:${className}`),
           className,
         };
+      }
+    }
+  }
+
+  // Pascal/Delphi: parsing-processor passes the nameNode (genericDot) rather
+  // than the definition node to findEnclosingClassInfo. Handle that case too.
+  if (node.type === 'genericDot') {
+    const parent = node.parent;
+    if (parent?.type === 'declProc') {
+      const grandparent = parent.parent;
+      if (grandparent?.type === 'defProc' && parent === grandparent.childForFieldName('header')) {
+        const dotIdx = node.text.indexOf('.');
+        if (dotIdx > 0) {
+          const className = node.text.slice(0, dotIdx);
+          return {
+            classId: generateId('Class', `${filePath}:${className}`),
+            className,
+          };
+        }
       }
     }
   }
@@ -308,6 +345,26 @@ export const findEnclosingClassInfo = (
         }
       }
     }
+    // Pascal/Delphi: declClass/declIntf/declHelper have no name field;
+    // the name lives on the parent declType node.
+    if (
+      current.type === 'declClass' ||
+      current.type === 'declIntf' ||
+      current.type === 'declHelper'
+    ) {
+      const parent = current.parent;
+      if (parent?.type === 'declType') {
+        const nameNode = parent.childForFieldName?.('name');
+        if (nameNode) {
+          let label: string = 'Class';
+          if (current.type === 'declIntf') label = 'Interface';
+          return {
+            classId: generateId(label, `${filePath}:${nameNode.text}`),
+            className: nameNode.text,
+          };
+        }
+      }
+    }
     if (CLASS_CONTAINER_TYPES.has(current.type)) {
       // Delegate language-specific container remapping to the provider hook.
       if (resolveEnclosingOwner) {
@@ -329,26 +386,6 @@ export const findEnclosingClassInfo = (
           // Provider remapped to a different node — re-evaluate from there.
           current = resolved;
           continue;
-        }
-      }
-
-      // Pascal: declClass/declIntf/declHelper have no name field themselves;
-      // the type name lives in the parent declType's identifier child.
-      if (
-        current.type === 'declClass' ||
-        current.type === 'declIntf' ||
-        current.type === 'declHelper'
-      ) {
-        const parent = current.parent;
-        if (parent?.type === 'declType') {
-          const nameNode = parent.childForFieldName?.('name');
-          if (nameNode) {
-            const label = CONTAINER_TYPE_TO_LABEL[current.type] || 'Class';
-            return {
-              classId: generateId(label, `${filePath}:${nameNode.text}`),
-              className: nameNode.text,
-            };
-          }
         }
       }
 
