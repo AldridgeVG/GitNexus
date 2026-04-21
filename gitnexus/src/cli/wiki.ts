@@ -9,7 +9,7 @@ import path from 'path';
 import readline from 'readline';
 import { execSync, execFileSync } from 'child_process';
 import cliProgress from 'cli-progress';
-import { getGitRoot, isGitRepo } from '../storage/git.js';
+import { getVCSRoot, hasVCSDir } from '../storage/vcs-factory.js';
 import {
   getStoragePaths,
   loadMeta,
@@ -98,17 +98,17 @@ export const wikiCommand = async (inputPath?: string, options?: WikiCommandOptio
   if (inputPath) {
     repoPath = path.resolve(inputPath);
   } else {
-    const gitRoot = getGitRoot(process.cwd());
-    if (!gitRoot) {
-      console.log('  Error: Not inside a git repository\n');
+    const vcsInfo = getVCSRoot(process.cwd());
+    if (!vcsInfo) {
+      console.log('  Error: Not inside a version control repository (Git or SVN)\n');
       process.exitCode = 1;
       return;
     }
-    repoPath = gitRoot;
+    repoPath = vcsInfo.root;
   }
 
-  if (!isGitRepo(repoPath)) {
-    console.log('  Error: Not a git repository\n');
+  if (!hasVCSDir(repoPath)) {
+    console.log('  Error: Not a valid version control repository\n');
     process.exitCode = 1;
     return;
   }
