@@ -17,7 +17,7 @@ import {
   addToGitignore,
   registerRepo,
 } from '../storage/repo-manager.js';
-import { getGitRoot, isGitRepo } from '../storage/git.js';
+import { getVCSRoot, hasVCSDir, detectVCSType } from '../storage/vcs-factory.js';
 
 export interface IndexOptions {
   force?: boolean;
@@ -47,18 +47,20 @@ export const indexCommand = async (inputPathParts?: string[], options?: IndexOpt
   if (inputPath) {
     repoPath = path.resolve(inputPath);
   } else {
-    const gitRoot = getGitRoot(process.cwd());
-    if (!gitRoot) {
-      console.log('  Not inside a git repository, try to run git init\n');
+    const vcsInfo = getVCSRoot(process.cwd());
+    if (!vcsInfo) {
+      console.log(
+        '  Not inside a version control repository, try to run git init or svn checkout\n',
+      );
       process.exitCode = 1;
       return;
     }
-    repoPath = gitRoot;
+    repoPath = vcsInfo.root;
   }
 
-  if (!options?.allowNonGit && !isGitRepo(repoPath)) {
-    console.log(`  Not a git repository: ${repoPath}`);
-    console.log('  Initialize one with `git init` or choose a valid repo path.\n');
+  if (!options?.allowNonGit && !hasVCSDir(repoPath)) {
+    console.log(`  Not a version control repository: ${repoPath}`);
+    console.log('  Initialize one with `git init`/`svn checkout` or choose a valid repo path.\n');
     console.log('  Or use --allow-non-git to register an existing .gitnexus index anyway.\n');
     process.exitCode = 1;
     return;
@@ -108,7 +110,10 @@ export const indexCommand = async (inputPathParts?: string[], options?: IndexOpt
 
   // ── Register in global registry ───────────────────────────────────
   await registerRepo(repoPath, meta);
-  await addToGitignore(repoPath);
+  // Only add to .gitignore for Git repos; SVN uses svn:ignore instead
+  if (detectVCSType(repoPath) === 'git') {
+    await addToGitignore(repoPath);
+  }
 
   const projectName = path.basename(repoPath);
   const { stats } = meta;
