@@ -534,9 +534,11 @@ export const CPP_QUERIES = `
 (struct_specifier name: (type_identifier) @name) @definition.struct
 (namespace_definition name: (namespace_identifier) @name) @definition.namespace
 (enum_specifier name: (type_identifier) @name) @definition.enum
+(enumerator name: (identifier) @name) @definition.const
 
-; Typedefs and unions (common in C-style headers and mixed C/C++ code)
+; Typedefs, type aliases, and unions (common in C-style headers and mixed C/C++ code)
 (type_definition declarator: (type_identifier) @name) @definition.typedef
+(alias_declaration name: (type_identifier) @name) @definition.type
 (union_specifier name: (type_identifier) @name) @definition.union
 
 ; Macros

@@ -162,6 +162,16 @@ describe('tree-sitter queries', () => {
     it('captures heritage (base class)', () => {
       expect(CPP_QUERIES).toContain('@heritage.extends');
     });
+
+    it('captures type aliases (using)', () => {
+      expect(CPP_QUERIES).toContain('alias_declaration');
+      expect(CPP_QUERIES).toContain('@definition.type');
+    });
+
+    it('captures enum constants', () => {
+      expect(CPP_QUERIES).toContain('enumerator');
+      expect(CPP_QUERIES).toContain('@definition.const');
+    });
   });
 
   describe('C# queries', () => {
